@@ -271,4 +271,158 @@ POST twitter/_delete_by_query?refresh&slices=2
 
 #### 文档更新API （Update API)
 
+> 更新操作
 
+update = get + reindex
+
+更新操作本质上是搜索并重新索引，因此它事实上可以实现增删改的逻辑操作；
+
+从实现上因为合并了两个操作，因此可以节省网络开销，避免版本冲突;
+
+另外，update操作，不允许关闭_source选项。
+
+* 基于脚本更新
+
+```
+#修改number类型字段
+POST test/_update/1
+{
+  "script" : {
+    "source" :"ctx._source.counter+=params.count",
+    "lang":"painless", //脚本语言
+    "params":{
+      "count":4
+    }
+  }
+}
+
+#数组类型字段增加元素
+POST test/_update/1
+{
+  "script" : {
+    "source" :"ctx._source.tags.add(params.tag)",
+    "lang":"painless",
+    "params":{
+      "tag":"pink"
+    }
+  }
+}
+
+#数组类型删除指定元素
+POST test/_update/1
+{
+  "script" : {
+    "source": "if (ctx._source.tags.contains(params.tag)) {ctx._source.tags.remove(ctx._source.tags.indexOf(params.tag))}",
+    "lang" : "painless",
+    "params": {
+      "tag" : "red"
+    }
+  }
+}
+
+#增加字段
+POST test/_update/1
+{
+    "script" : "ctx._source.new_field = 'value_of_new_field'"
+}
+
+#删除字段
+POST test/_update/1
+{
+    "script" : "ctx._source.remove('new_field')"
+}
+
+#动态删除文档
+POST test/_update/1
+{
+    "script" : {
+        "source": "if (ctx._source.tags.contains(params.tag)) { ctx.op = 'delete' } else { ctx.op = 'none' }",
+        "lang": "painless",
+        "params" : {
+            "tag" : "green"
+        }
+    }
+}
+
+```
+脚本中上下文ctx可获取的属性：
+
+* _source -> 要求文档_source必须启用
+* _type
+* _id
+* _version
+* _index
+* _routing
+* _now -> 时间戳
+
+> 部分文档更新
+
+以递归合并的方式进行更新, 如果想完全替换文档应该使用index api
+
+```
+#字段name不存在时，该请求会增加一个新的字段
+POST test/_update/1
+{
+    "doc" : {
+        "name" : "new_name"
+    }
+}
+
+#如果字段存在，并且值相同，则不进行更新，返回noop
+{
+  "_index" : "test",
+  "_type" : "_doc",
+  "_id" : "1",
+  "_version" : 5,
+  "result" : "noop",
+  "_shards" : {
+    "total" : 0,
+    "successful" : 0,
+    "failed" : 0
+  }
+}
+
+#可以关闭noop，即使key-value相同，也进行更新
+POST test/_update/1
+{
+  "doc" :{
+    "name" : "liam2"
+  },
+  "detect_noop" : "false"
+}
+
+```
+
+如果_update api同时指定script和doc, 那么doc将被忽略，通常情况下，建议
+使用script
+
+> upsert 操作
+
+如果更新的文档不存在，则执行插入
+
+```
+#script方式
+POST test/_update/1
+{
+    "script" : {
+        "source": "ctx._source.counter += params.count",
+        "lang": "painless",
+        "params" : {
+            "count" : 4
+        }
+    },
+    "upsert" : {
+        "counter" : 1
+    }
+}
+
+#partial doc方式
+POST test/_update/3
+{
+  "doc" : {
+    "name" : "miaomei"
+  },
+  "doc_as_upsert" : true
+}
+
+```
