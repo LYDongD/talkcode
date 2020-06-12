@@ -440,3 +440,17 @@ POST test/_update/3
 }
 
 ```
+
+> 其他参数
+
+* retry_on_conflicts -> 版本冲突后的重试次数
+    * 在get和reindex操作之间，文档可能被修改导致版本冲突
+* routing -> 路由到指定的分片
+* timeout -> 等待active shard 的超时时间
+* wait_for_active_shards -> 需要等待的活跃分片数
+* refresh -> 更新后是否refresh，保证文档实时可见性
+* _source -> 是否返回_source
+    * _source = true -> 默认false
+* version -> 指定文档的版本，匹配时才进行更新
+* if_seq_no/if_primary_term
+    * 匹配时才进行更新
