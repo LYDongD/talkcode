@@ -1,0 +1,274 @@
+## elasticsearch-7.2 文档阅读笔记
+
+### 文档API (Document API)
+
+#### 按条件删除API (Delete By Query API)
+
+> 基础使用
+
+删除满足query查询条件的文档
+
+```
+
+#删除单个索引
+POST twitter/_delete_by_query
+{
+  "query": { 
+    "match": {
+      "message": "some message"
+    }
+  }
+}
+
+#删除多个索引
+POST twitter,blog/_delete_by_query
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+
+#删除指定分片组上的索引
+POST twitter/_delete_by_query?routing=1
+{
+  "query": {
+    "range" : {
+        "age" : {
+           "gte" : 10
+        }
+    }
+  }
+}
+
+```
+
+也可以采用query string parameter风格（q=xxx), 和search api用法相同
+
+返回值：
+
+```
+{
+  "took" : 147, //耗时ms
+  "timed_out": false, //是否有请求超时
+  "deleted": 119, //删除的文档数
+  "batches": 1, //删除的批次数，例如scroll_size=1, deleted=3, 则batches = 3 / 1= 3
+  "version_conflicts": 0, //发送版本冲突的版本号
+  "noops": 0, 
+  "retries": {
+    "bulk": 0, //bulk delete 的重试次数
+    "search": 0 //query search 的重试次数
+  }, 
+  "throttled_millis": 0, //限流等待的时间
+  "requests_per_second": -1.0, //qps， -1不限流
+  "throttled_until_millis": 0, //永远为0，使用task api时该值有意义
+  "total": 119, //满足删除条件的文档总数
+  "failures" : [ ] //请求因为不可恢复错误中断时的错误信息
+}
+
+```
+
+**关于version_conflicts:**
+删除文档时，es会获取基于版本的一个索引的快照(snapshot), 意味着在获取snapshot之后，
+文档更新(version被更新）之前删除时，会引发version conflict。只有版本匹配时才能
+完成删除操作。
+
+如果想在发送版本冲突时依然执行删除，可以通过参数：conflicts=proceed 强制执行：
+
+```
+POST twitter/_delete_by_query?conflicts=proceed
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+```
+
+> 执行过程
+
+_delete_by_query执行过程中，多条请求(scroll search)被**串行**的发送以查找满足条件的文档，当一个批次
+(scroll_size)的文档被找到, 将会通过bulk 批量请求删除这些文档。如果查询或删除请求被拒绝，
+默认失败处理机制是：重试。重试至多10次，每次的间隔时间指数型衰减。当重试次数达到最大值
+后，请求退出，返回失败信息。
+
+注意，查询删除是分批进行的，它并不是原子性的，因此失败的批次不会回滚前面成功的批次，也不会
+继续执行剩下的批次。
+
+
+另外，我们可以指定每次删除批次的大小：scroll_size
+
+```
+POST twitter/_delete_by_query?scroll_size=5000
+{
+  "query": {
+    "term": {
+      "user": "kimchy"
+    }
+  }
+}
+
+```
+
+如果scroll_size过大，意味着单批次请求时间被拉长，导致整体看起来不够**平滑**
+
+> 其他URL可选参数
+
+* refresh -> 删除请求完成后会刷新**所有**分片
+    * 和delete不同，它只刷新接收delete请求的分片
+* wait_for_active_shards -> 等待指定数量的活跃副本就绪
+    * timeout -> 等待超时时间
+* scroll -> 指定scroll search的最大时间
+    * 默认5min
+* requests_per_second -> qps流量限制
+    * -1 表示不限制，其他正数的decimal类型则进行限制，例如1.5或12
+    * 假设一批次查询1000条（scroll_size=1000), qps=500，意味着一批次请求至少2s，如果0.5s执行结束，下一批次需要等待1.5s
+        * target_time = 1000 / 500 = 2
+        * wait_time = target_time - real_execute_time = 2 - 0.5 = 1.5s
+    * qps可以在请求执行时重新设置(前提是wait_for_completion=false）
+        * POST _delete_by_query/r1A2WoRbTwKZ516z6NEs5A:36619/_rethrottle?requests_per_second=-1 
+* wait_for_completion -> 是否等待删除操作完成
+    * 设置成false -> 将返回一个taskId （异步）
+        * 可以使用task api对task进一步处理
+            * 查看task执行情况
+                * GET _tasks?detailed=true&actions=*/delete/byquery
+                * GET /_tasks/r1A2WoRbTwKZ516z6NEs5A:36619
+            * 取消执行中的task
+                * POST _tasks/r1A2WoRbTwKZ516z6NEs5A:36619/_cancel
+            * 重新调整task的限流规则
+                * POST _delete_by_query/r1A2WoRbTwKZ516z6NEs5A:36619/_rethrottle?requests_per_second=-1
+        * 如果task执行结束，它将被删除
+
+> 对scroll请求进行分片并行处理(分治）
+
+将scorll search 分解成多个子请求(sub_requests)，这些请求并发执行
+
+* 手动切片
+
+删除时指定切片参数（切片个数和编号）
+
+```
+
+#删除切片1
+POST twitter/_delete_by_query
+{
+  "slice": {
+    "id": 0, //切片编号
+    "max": 2 //切片数量
+  },
+  "query": {
+    "range": {
+      "likes": {
+        "lt": 10
+      }
+    }
+  }
+}
+
+##删除切片2
+POST twitter/_delete_by_query
+{
+  "slice": {
+    "id": 1,
+    "max": 2
+  },
+  "query": {
+    "range": {
+      "likes": {
+        "lt": 10
+      }
+    }
+  }
+}
+
+```
+
+注意，每个切片的文档数不一定相同，即存在较大和较小的切片
+
+* 自动切片
+
+通过slices指定切片个数，将自动切片并完成并发请求
+
+```
+POST twitter/_delete_by_query?refresh&slices=2
+{
+  "query": {
+    "range": {
+      "likes": {
+        "lt": 10
+      }
+    }
+  }
+}
+
+```
+返回切片及删除信息
+
+```
+{
+  "took" : 13,
+  "timed_out" : false,
+  "total" : 12,
+  "deleted" : 12,
+  "batches" : 2,
+  "version_conflicts" : 0,
+  "noops" : 0,
+  "retries" : {
+    "bulk" : 0,
+    "search" : 0
+  },
+  "throttled_millis" : 0,
+  "requests_per_second" : -1.0,
+  "throttled_until_millis" : 0,
+  "slices" : [
+    {
+      "slice_id" : 0,
+      "total" : 6,
+      "deleted" : 6,
+      "batches" : 1,
+      "version_conflicts" : 0,
+      "noops" : 0,
+      "retries" : {
+        "bulk" : 0,
+        "search" : 0
+      },
+      "throttled_millis" : 0,
+      "requests_per_second" : -1.0,
+      "throttled_until_millis" : 0
+    },
+    {
+      "slice_id" : 1,
+      "total" : 6,
+      "deleted" : 6,
+      "batches" : 1,
+      "version_conflicts" : 0,
+      "noops" : 0,
+      "retries" : {
+        "bulk" : 0,
+        "search" : 0
+      },
+      "throttled_millis" : 0,
+      "requests_per_second" : -1.0,
+      "throttled_until_millis" : 0
+    }
+  ],
+  "failures" : [ ]
+}
+
+```
+
+设置slices=auto, 让es决定切片数，默认一个分片一个切片, 如果要删除多个索引，
+切片数 = min(index分片，index2分片...)
+
+* 切片数选择多少合适？
+  * query 性能: 
+    * 切片 < 分片 -> 性能下降
+    * 切片 = 分片 -> 性能最佳
+    * 切片 > 分片 -> 性能提升不大
+  * delete 性能：
+    * 理论上切片阅多，删除越快(并行）
+  * 综上，切片数应该设置为分片数，这也是auto的设定
+
+#### 文档更新API （Update API)
+
+
