@@ -401,7 +401,7 @@ POST test/_update/1
 如果更新的文档不存在，则执行插入
 
 ```
-#script方式
+#script方式, 文档不存在则执行upsert,否则执行script
 POST test/_update/1
 {
     "script" : {
@@ -414,6 +414,20 @@ POST test/_update/1
     "upsert" : {
         "counter" : 1
     }
+}
+
+#不在upsert中设置值, 无论文档是否存在都执行script
+POST test/_update/6
+{
+  "scripted_upsert" : true,
+  "script" : {
+    "source": "ctx._source.counter = params.count",
+    "lang": "painless",
+    "params" : {
+      "count" : 3
+    }
+  },
+  "upsert" :{}
 }
 
 #partial doc方式
