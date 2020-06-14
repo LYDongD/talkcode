@@ -454,3 +454,7 @@ POST test/_update/3
 * version -> 指定文档的版本，匹配时才进行更新
 * if_seq_no/if_primary_term
     * 匹配时才进行更新
+
+#### 按条件更新（UPDATE BY QUERY API)
+
+
