@@ -259,3 +259,114 @@ A等B的X锁释放，B等A的share锁释放，形成循环等待
 最终现象是A删除成功，B抛出异常： Deadlock found when trying to get lock; try restarting transaction
 
 结论：多个连接获取多个资源(多个锁）形成相互等待时会造成死锁，数据库通过死锁检测自动解锁，会导致其中一个连接执行失败。
+
+#### [06 | 用“等待-通知”机制优化循环等待](https://time.geekbang.org/column/article/85241)
+
+> 笔记
+
+* 等待通知机制解决什么问题？
+
+在check and do 的场景下，条件不满足有2种解决方案：
+    * 1 自旋，主动检查，直到条件满足
+    * 2 阻塞，让出cpu，条件满足时被动通知
+
+等到通知机制就是第二种方法的实现，它让线程waiting，让出cpu资源给其他线程，
+能提高cpu的利用率。
+
+* 使用等待通知机制的最佳写法
+
+```
+
+//等待
+synchronize(lock) {
+    //如果不是while，被唤醒的线程在获取锁之前条件变量可能再次被修改为false导致逻辑错误
+    while(!condition) {
+        lock.wait()
+    }
+}
+
+//通知
+synchronize(lock) {
+    condition = true
+    //如果选择notify()，只会唤醒其中一个等待线程，导致有的线程永远等待
+    lock.notifyAll()
+}
+
+```
+
+> ArrayBlockingQueue中等待通知的实现
+
+* 模型
+    * 生产消费模型，生产消费者分别属于不同的线程
+
+* 条件
+    * 非空: notEmpty -> 非空时才能消费任务
+    * 非满: notFull -> 非满时才能生产任务
+
+* 生产
+
+```
+    public void put(E e) throws InterruptedException {
+        checkNotNull(e);
+        final ReentrantLock lock = this.lock;
+        lock.lockInterruptibly();
+        try {
+            //非满时才能入队，否则等待非满
+            while (count == items.length)
+                notFull.await();
+            //入队说明非空，需要通知非空
+            enqueue(e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void enqueue(E x) {
+        // assert lock.getHoldCount() == 1;
+        // assert items[putIndex] == null;
+        final Object[] items = this.items;
+        items[putIndex] = x;
+        if (++putIndex == items.length)
+            putIndex = 0;
+        count++;
+        //入队成功后，通知非空，唤醒等待非空的消费者线程
+        notEmpty.signal();
+    }
+
+```
+
+* 消费
+
+```
+    public E take() throws InterruptedException {
+        final ReentrantLock lock = this.lock;
+        lock.lockInterruptibly();
+        try {
+            //如果队列为空，需要等待，否则需要等待非空
+            while (count == 0)
+                notEmpty.await();
+            //出队后队列肯定是非满的，需要通知非满
+            return dequeue();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private E dequeue() {
+        final Object[] items = this.items;
+        E x = (E) items[takeIndex];
+        items[takeIndex] = null;
+        if (++takeIndex == items.length)
+            takeIndex = 0;
+        count--;
+        if (itrs != null)
+            itrs.elementDequeued();
+        //出队成功后，通知等待非满的生产线程
+        notFull.signal();
+        return x;
+    }
+
+```
+
+ArrayBlockingQueue通过等到通知机制 (用Condition实现）实现了阻塞队列，入队或出队时需要获取相同的锁，
+因此性能相对于LinkedBlockingQueue要差一些
