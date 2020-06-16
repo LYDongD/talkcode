@@ -248,4 +248,14 @@ class SafeCalc {
     * locked/waiting to lock -> 互相等待对方释放锁 
         * 说明发生了死锁
 
+> 数据库死锁
 
+1. A连接读获取共享锁：select *from users where name = 'liam1' lock in share mode;
+2. B连接删除，获取排它锁：delete from users where name = 'liam1'; （需要等待共享锁释放资源）
+3. A删除：delete from users where name = 'liam1'，等待B释放排他锁
+
+A等B的X锁释放，B等A的share锁释放，形成循环等待
+
+最终现象是A删除成功，B抛出异常： Deadlock found when trying to get lock; try restarting transaction
+
+结论：多个连接获取多个资源(多个锁）形成相互等待时会造成死锁，数据库通过死锁检测自动解锁，会导致其中一个连接执行失败。
