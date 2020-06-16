@@ -146,9 +146,9 @@ class SafeCalc {
 	* 循环等待
 		* 为什么不能共享资源？
 			* 互斥 -> 资源同时只能被一个线程持有
-	    	* 为什么不抢占资源？
+	    * 为什么不抢占资源？
 			* 不可抢占 -> 其他线程无法抢占当前线程持有的资源
-	    	* 为什么不释放？
+	    * 为什么不释放？
 			* 占用并等待 -> 持有资源的线程在等待其他资源的时候不会释放
 * 如何避免死锁
     * 如何避免等待
@@ -171,5 +171,81 @@ class SafeCalc {
 的能力，无论是生活经验，还是跨学科的知识储备，只有平时注重积累，耐心学习，才能慢慢养成这种
 能够应用多种模型分析并解决复杂问题的能力。
 
-   
+> 死锁模拟与分析
+
+准备2个线程通过两把锁去获取两个资源，访问顺序相反：
+
+```
+/**
+     *  多线程循环等待资源
+     *  1 多个线程访问多个有相互依赖的资源
+     *  2 访问顺序不一致
+     */
+    public void deadLock() throws Exception{
+
+        Thread threadA = new Thread(() -> {
+            synchronized (lockA){
+                resourceA++;
+
+                try {
+                    sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                synchronized (lockB) {
+                    resourceB++;
+                }
+            };
+        });
+
+        Thread threadB = new Thread(() -> {
+            synchronized (lockB){
+                resourceB--;
+
+                try {
+                    sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                synchronized (lockA) {
+                    resourceA--;
+                }
+            }
+        });
+
+        threadA.start();
+        threadB.start();
+    }
+
+```
+
+分析死锁：jstack pid > tmp
+
+```
+"Thread-1" #10 prio=5 os_prio=31 tid=0x00007fc94197e800 nid=0x4e03 waiting for monitor entry [0x0000700009f57000]
+   java.lang.Thread.State: BLOCKED (on object monitor)
+    at com.example.demo.concurrent.DeadLockDemo.lambda$deadLock$1(DeadLockDemo.java:51)
+    - waiting to lock <0x000000079570e960> (a java.lang.Object)
+    - locked <0x000000079570e970> (a java.lang.Object)
+    at com.example.demo.concurrent.DeadLockDemo$$Lambda$2/2074407503.run(Unknown Source)
+    at java.lang.Thread.run(Thread.java:745)
+
+"Thread-0" #9 prio=5 os_prio=31 tid=0x00007fc94197e000 nid=0x4c03 waiting for monitor entry [0x0000700009e54000]
+   java.lang.Thread.State: BLOCKED (on object monitor)
+    at com.example.demo.concurrent.DeadLockDemo.lambda$deadLock$0(DeadLockDemo.java:35)
+    - waiting to lock <0x000000079570e970> (a java.lang.Object)
+    - locked <0x000000079570e960> (a java.lang.Object)
+    at com.example.demo.concurrent.DeadLockDemo$$Lambda$1/1149319664.run(Unknown Source)
+    at java.lang.Thread.run(Thread.java:745)
+
+
+```  
+
+* 查看线程状态：线程状态为BLOCKED
+* 查看持有的锁和等待的锁：
+    * locked/waiting to lock -> 互相等待对方释放锁 
+        * 说明发生了死锁
+
 
