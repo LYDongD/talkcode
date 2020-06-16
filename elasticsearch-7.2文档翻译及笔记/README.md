@@ -457,4 +457,351 @@ POST test/_update/3
 
 #### 按条件更新（UPDATE BY QUERY API)
 
+该api最简单的用法如下，在不更新_source的情况下，匹配文档最新的映射，例如使新加的字段
+根据新的mappings进行索引。
+
+```
+#conflics=proceed 表示当发生版本冲突时，依然执行更新
+POST twitter/_update_by_query?conflicts=proceed
+
+
+#按条件同步mappings
+POST twitter/_update_by_query?conflicts=proceed
+{
+  "query": { 
+    "term": {
+      "user": "kimchy"
+    }
+  }
+}
+
+```
+
+此类更新将返回：
+
+```
+{
+  "took" : 147, //耗时ms
+  "timed_out": false, //是否超时
+  "updated": 120, //已更新的文档数
+  "deleted": 0, //已删除的文档数
+  "batches": 1, //scoll search 的批数
+  "version_conflicts": 0, //冲突的版本号
+  "noops": 0, //ctx.op=noop（不进行更改）的文档数量
+  "retries": { 
+    "bulk": 0,
+    "search": 0
+  },
+  "throttled_millis": 0, //因为限流等待的总时长
+  "requests_per_second": -1.0, //qps限制
+  "throttled_until_millis": 0, // 总是0，在task api中表示下一次限流的等待时间
+  "total": 120, //已处理的文档数
+  "failures" : [ ] //失败说明，请求因为失败终止退出时该数组不为空
+}
+```
+
+> 版本校验
+
+_update_by_query 会为索引生成快照，并记录一个内部的版本号。当前请求执行更新索引时，如果
+文档被其他请求修改，版本发生变化，将会导致版本冲突。如果不希望进行版本校验，或因为版本校验
+失败导致请求终止，可以设置参数conflicts=proceed，例如前面的示例，如果只是同步最新的mappings,
+版本冲突不会产生副作用，因此可以跳过它的检测。
+
+> 失败处理
+
+api发生失败时（例如版本冲突），响应结果中将包好failures字段进行说明。api是非原子性的，它通过scroll query（分批），然后
+batch update的方式执行更新，后面批次的失败不会回滚前面已经执行了更新的批次，但是会终止请求，
+导致后面的批次无法执行。
+
+
+> 按条件更新文档的_source
+
+使用脚本更新
+
+```
+POST twitter/_update_by_query
+{
+  "script": {
+    "source": "ctx._source.likes++",
+    "lang": "painless"
+  },
+  "query": {
+    "term": {
+      "user": "kimchy"
+    }
+  }
+}
+
+```
+
+script支持动态的修改文档的**操作(ctx.op)**
+
+* noop -> 不修改文档
+* delete -> 删除文档
+
+> 特性
+
+1 支持多索引同时更新
+
+```
+POST twitter,blog/_update_by_query
+
+```
+
+2 支持通过routing指定更新特定的分片
+
+```
+POST twitter/_update_by_query?routing=1
+
+```
+
+3 可设置每个查询批次的大小，默认是100
+
+```
+POST twitter/_update_by_query?scroll_size=100
+
+```
+
+4 可以配合ingest功能使用
+
+```
+
+//创建pipeline，包含一个处理器，用于添加字段
+PUT _ingest/pipeline/set-foo
+{
+  "description" : "sets foo",
+  "processors" : [ {
+      "set" : {
+        "field": "foo",
+        "value": "bar"
+      }
+  } ]
+}
+
+//更新之前先交给指定的pipeline处理
+POST twitter/_update_by_query?pipeline=set-foo
+
+```
+
+> 通用参数支持
+
+* refresh 
+
+更新完成后将刷新所有分片，它和update api不一样，update api仅刷新发生了更新操作的特定分片，且不支持
+wait_for相关参数
+
+* wait_for_completion
+
+如果它被设置为false, 则请求采用异步模式，返回一个task对象。task对象可被task api进一步处理，例如
+取消任务。
+
+* wait_for_active_shards
+
+该参数要求指定数量的分片活跃时才执行更新，如果不满足，则进行等待；可以通过timeout设置等待时间。
+
+* scroll
+
+_update_by_query 使用scoll search 方式进行搜索，因此可以通过scroll参数控制**搜索上下文的存活时间*，
+例如scroll=10m, 默认是5min
+
+* requests_per_second
+
+该参数可以被设置为任意正数的decimal数值，例如1.4，6, 该参数用于限流（qps)，该请求的每个批次之间
+因为它的限制可能需要故意等待一段时间。默认值-1，表示关闭该限流功能。
+
+例如，设置qps=500, 一个批次请求为1000，则该批次的限制延时为：1000 / 500 = 2s
+如果该批次0.5s就处理完毕，需要等待 2 - 0.5 = 1.5 再处理下一批次
+
+意味着，batch size 越大，因为限流的关系需要执行更长的时间，意味着需要等待更长的时间，这使得
+请求曲线不够平滑。 
+
+> 异步，和task api配合使用
+
+当设置参数wait_for_completion=false，请求采用异步，返回task对象。
+
+**获取task当前状态：**
+
+```
+GET _tasks?detailed=true&actions=*byquery
+
+GET /_tasks/r1A2WoRbTwKZ516z6NEs5A:36619
+
+```
+
+响应结果：
+
+```
+{
+  "nodes" : {
+    "r1A2WoRbTwKZ516z6NEs5A" : {
+      "name" : "r1A2WoR",
+      "transport_address" : "127.0.0.1:9300",
+      "host" : "127.0.0.1",
+      "ip" : "127.0.0.1:9300",
+      "attributes" : {
+        "testattr" : "test",
+        "portsfile" : "true"
+      },
+      "tasks" : {
+        "r1A2WoRbTwKZ516z6NEs5A:36619" : {
+          "node" : "r1A2WoRbTwKZ516z6NEs5A",
+          "id" : 36619,
+          "type" : "transport",
+          "action" : "indices:data/write/update/byquery",
+          "status" : {  //任务状态   
+            "total" : 6154, // 期望执行的文档数 (实际完成 = 期望值时任务结束）
+            "updated" : 3500, //已完成更新的文档数
+            "created" : 0,
+            "deleted" : 0,
+            "batches" : 4,
+            "version_conflicts" : 0,
+            "noops" : 0,
+            "retries": {
+              "bulk": 0,
+              "search": 0
+            },
+            "throttled_millis": 0
+          },
+          "description" : ""
+        }
+      }
+    }
+  }
+}
+
+```
+
+**取消任务**
+
+```
+POST _tasks/r1A2WoRbTwKZ516z6NEs5A:36619/_cancel
+
+```
+
+取消任务可能很快也可能花费数s, 当使用task status api查看任务状态时，除非
+已经检测到任务被取消且终止，否则将会继续显示该任务。异步请求的开销是需要
+在本地磁盘创建一个任务文档：.tasks/task/${taskId}
+
+**任务重新调整qps**
+
+```
+//解除流控
+POST _update_by_query/r1A2WoRbTwKZ516z6NEs5A:36619/_rethrottle?requests_per_second=-1
+
+```
+
+> 切片，并发的执行scoll search
+
+api 支持 slice scoll 机制以并发的执行整个更新流程，它将请求切分为更小的子请求并提高吞吐量。
+
+* 手动切片 
+
+分成2片：
+
+```
+POST twitter/_update_by_query
+{
+  "slice": {
+    "id": 0,
+    "max": 2
+  },
+  "script": {
+    "source": "ctx._source['extra'] = 'test'"
+  }
+}
+POST twitter/_update_by_query
+{
+  "slice": {
+    "id": 1,
+    "max": 2
+  },
+  "script": {
+    "source": "ctx._source['extra'] = 'test'"
+  }
+}
+
+//验证2个切片执行成功
+GET _refresh
+POST twitter/_search?size=0&q=extra:test&filter_path=hits.total
+
+```
+
+* 自动切片
+
+指定切成5片，并发度为5
+
+```
+POST twitter/_update_by_query?refresh&slices=5
+{
+  "script": {
+    "source": "ctx._source['extra'] = 'test'"
+  }
+}
+
+```
+如果设置切片数：slices=auto，es的计算策略是根据分片数：
+count = min(indexs.shards.count)
+
+请求被切片后，分解为多个子请求：
+
+1. 在task api中，子请求以子任务的形式存在
+2. 获取任务状态时，仅返回已完成的切片的子任务状态
+3. 可以对子任务分别进行限流或取消操作
+4. 对父任务修改限流配置时，仅对那些还未执行完毕的子任务生效
+5. 取消请求时，会取消每个子请求
+6. 每个切片对应的文档数量不是均衡的，有的切片大一点
+7. 像requests_per_second和size这类参数，会按比例分配给子请求
+8. 每个子请求生成的索引快照有点不同，因为生成的时间有微小的差异
+
+**如何选择合理的切片数？**
+
+建议将slices设置为auto，交给es进行决策；否则，建议切片数=分片数。
+因为如果切片数<分片数，会降低查询性能；如果切片数>分片数，也无法
+推升查询性能。而更新性能和可用资源线性相关。
+
+无论是查询还是更新为主，它的性能总是由文档数量和集群资源决定。
+
+> 示例：通过update_by_query 同步最新的mappings
+
+```
+PUT test
+{
+  "mappings": {
+    "dynamic": false,   
+    "properties": {
+      "text": {"type": "text"}
+    }
+  }
+}
+
+POST test/_doc?refresh
+{
+  "text": "words words",
+  "flag": "bar"
+}
+POST test/_doc?refresh
+{
+  "text": "words words",
+  "flag": "foo"
+}
+
+//由于flag未添加mappings，它不会被索引，不支持根据flag搜索
+
+//更新mappings
+PUT test/_mapping   
+{
+  "properties": {
+    "text": {"type": "text"},
+    "flag": {"type": "text", "analyzer": "keyword"}
+  }
+}
+
+//同步mappings
+POST test/_update_by_query?refresh&conflicts=proceed
+
+同步mappings后字段flag被索引
+
+```
+
+
 
