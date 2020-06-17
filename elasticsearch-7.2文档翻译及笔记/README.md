@@ -957,3 +957,128 @@ GET test2/_search?stored_fields=key1,key2
 #### 批量写 (BULK API)
 
 bulk api 使得一次请求可以处理多个索引或删除操作，提高了索引的速度。
+
+api的请求体格式(ndjson)如下：
+
+请求头中Content-Type必须为application/x-ndjson
+
+1. 每行json用换行符分隔
+2. 最后一行也需要以回车换行结尾
+
+```
+action_and_meta_data //操作，例如index/create/delete/update，和元数据
+optional_source //可选的source，例如index/create时需要添加文档source
+action_and_meta_data
+optional_source
+...
+action_and_meta_data
+optional_source
+
+
+//实例
+POST _bulk
+{ "index" : { "_index" : "test", "_id" : "1" } }
+{ "field1" : "value1" }
+{ "delete" : { "_index" : "test", "_id" : "2" } }
+{ "create" : { "_index" : "test", "_id" : "3" } }
+{ "field1" : "value3" }
+{ "update" : {"_id" : "1", "_index" : "test"} }
+{ "doc" : {"field2" : "value2"} }
+
+
+//返回
+{
+   "took": 30,
+   "errors": false,
+   "items": [
+      {
+         "index": {
+            "_index": "test",
+            "_type": "_doc",
+            "_id": "1",
+            "_version": 1,
+            "result": "created",
+            "_shards": {
+               "total": 2,
+               "successful": 1,
+               "failed": 0
+            },
+            "status": 201,
+            "_seq_no" : 0,
+            "_primary_term": 1
+         }
+      },
+      {
+         "delete": {
+            "_index": "test",
+            "_type": "_doc",
+            "_id": "2",
+            "_version": 1,
+            "result": "not_found",
+            "_shards": {
+               "total": 2,
+               "successful": 1,
+               "failed": 0
+            },
+            "status": 404,
+            "_seq_no" : 1,
+            "_primary_term" : 2
+         }
+      },
+      {
+         "create": {
+            "_index": "test",
+            "_type": "_doc",
+            "_id": "3",
+            "_version": 1,
+            "result": "created",
+            "_shards": {
+               "total": 2,
+               "successful": 1,
+               "failed": 0
+            },
+            "status": 201,
+            "_seq_no" : 2,
+            "_primary_term" : 3
+         }
+      },
+      {
+         "update": {
+            "_index": "test",
+            "_type": "_doc",
+            "_id": "1",
+            "_version": 2,
+            "result": "updated",
+            "_shards": {
+                "total": 2,
+                "successful": 1,
+                "failed": 0
+            },
+            "status": 200,
+            "_seq_no" : 3,
+            "_primary_term" : 4
+         }
+      }
+   ]
+}
+
+```
+> action
+
+* create -> 如果索引存在会失败
+* index -> 增加或替换文档
+* delete -> 下一行不需要source
+* update -> 下一行是partial doc, upsert 或script
+
+如果使用curl执行请求，建议使用--data-binary的方式从文件中读取请求体
+
+```
+$cat requests //请求体保存在requests文件中
+{"index" : {"_index" : "test", "_id" : "1"}}
+{"field1" : "value1"}
+
+$curl -s -H "Content-Type=applicatio/x-ndjson" -XPOST localhost:9200/_bulk --data-binary "@requests"; echo
+
+> 
+
+```
