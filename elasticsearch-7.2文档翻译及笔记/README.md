@@ -803,5 +803,157 @@ POST test/_update_by_query?refresh&conflicts=proceed
 
 ```
 
+#### 批量读(MULTI GET API)
 
+批量读接口可根据文档的索引，类型和id一次性返回多条文档。返回结果将包含一个docs数组，
+数组包含查找到的文档或错误。
 
+```
+GET /_mget
+{
+    "docs" : [
+        {
+            "_index" : "test",
+            "_type" : "_doc",
+            "_id" : "1"
+        },
+        {
+            "_index" : "test",
+            "_type" : "_doc",
+            "_id" : "2"
+        }
+    ]
+}
+
+//可以将索引参数放到url上
+GET /test/_mget
+{
+    "docs" : [
+        {
+            "_type" : "_doc",
+            "_id" : "1"
+        },
+        {
+            "_type" : "_doc",
+            "_id" : "2"
+        }
+    ]
+}
+
+//可以将类型参数放到url上
+GET /test/_doc/_mget
+{
+    "docs" : [
+        {
+            "_id" : "1"
+        },
+        {
+            "_id" : "2"
+        }
+    ]
+}
+
+//可以合并id，简化请求参数
+GET /test/_doc/_mget
+{
+    "ids" : ["1", "2"]
+}
+
+//针对返回结果_source进行过滤（前提是_source已被stored)
+GET /_mget
+{
+    "docs" : [
+        {
+            "_index" : "test",
+            "_type" : "_doc",
+            "_id" : "1",
+            "_source" : false
+        },
+        {
+            "_index" : "test",
+            "_type" : "_doc",
+            "_id" : "2",
+            "_source" : ["field3", "field4"]
+        },
+        {
+            "_index" : "test",
+            "_type" : "_doc",
+            "_id" : "3",
+            "_source" : {
+                "include": ["user"],
+                "exclude": ["user.location"]
+            }
+        }
+    ]
+}
+
+//仅stored特定字段
+GET /_mget
+{
+    "docs" : [
+        {
+            "_index" : "test",
+            "_type" : "_doc",
+            "_id" : "1",
+            "stored_fields" : ["field1", "field2"]
+        },
+        {
+            "_index" : "test",
+            "_type" : "_doc",
+            "_id" : "2",
+            "stored_fields" : ["field3", "field4"]
+        }
+    ]
+}
+
+GET /test/_doc/_mget?stored_fields=field1,field2
+{
+    "docs" : [
+        {
+            "_id" : "1" 
+        },
+        {
+            "_id" : "2",
+            "stored_fields" : ["field3", "field4"] 
+        }
+    ]
+}
+
+```
+
+_source 和 stored_field 的区别：
+
+搜索的时候，可以指定从_source(source_filtering)或store(stored_fields)获取。
+如果从store获取，需要保证mappings的该字段store属性设置为true
+
+```
+PUT test2
+{
+  "mappings": {
+    "_source": {
+      "enabled": false
+    },
+    "properties": {
+      "key1": {
+        "type": "keyword",
+        "store": true
+      },
+      "key2": {
+        "type": "text",
+        "store": false
+      }
+    }
+  }
+}
+
+//由于关闭了_source, 将无法返回source
+GET test2/_search 
+
+//由于key1的store设置为true，key2为false，将只返回key1
+GET test2/_search?stored_fields=key1,key2
+
+```
+
+#### 批量写 (BULK API)
+
+bulk api 使得一次请求可以处理多个索引或删除操作，提高了索引的速度。
