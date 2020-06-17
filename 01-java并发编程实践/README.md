@@ -392,7 +392,7 @@ ArrayBlockingQueue通过等到通知机制 (用Condition实现）实现了阻塞
             * 非公平锁
             * notify 而不是notifyAll
         * 活锁
-            * todo
+            * 线程相互谦让（总是优先让对方执行）导致任务没有进展
     * 性能问题（QPS/RT)
         * 串行导致整体并发性能提升受限
             * 受限于串行度 -> S = 1 / (1 - p) * (p / n )
@@ -421,7 +421,117 @@ ArrayBlockingQueue通过等到通知机制 (用Condition实现）实现了阻塞
                 * TLS -> ThreadLocal
                 * 乐观锁 -> cas等
                 * CopyOnWrite -> todo
-      
+
+> 活锁代码示例
+
+* 资源：Resource, 只能被一个worker拥有并执行
+* 执行者: worker, 一个线程持有一个worker，可执行拥有的资源
+* 谦让: 在active的情况下，总是让其他worker优先执行
+
+DEMO:
+
+```
+    public static void main(String args[]) {
+
+        Worker workerA = new Worker(true);
+        Worker workerB = new Worker(true);
+        Resource resource = new Resource();
+        resource.setOwner(workerA);
+
+        Thread threadA = new Thread(() -> {
+            workerA.work(resource, workerB);
+        });
+
+        Thread threadB = new Thread(() -> {
+            workerB.work(resource, workerA);
+        });
+
+        threadA.start();
+        threadB.start();
+    }
+
+
+    //worker
+    public class Worker {
+
+    /**
+     *  是否活跃，只有活跃的worker才能执行资源
+     */
+    private boolean active;
+
+    public Worker(boolean active) {
+        this.active = active;
+    }
+
+    /**
+     *  执行资源
+     *  优先谦让，如果其他线程活跃，先让其他线程执行
+     */
+    public void work(Resource resource, Worker other) {
+
+        //只有活跃且拥有资源执行权才执行
+        while (active){
+
+            //没有资源执行权
+            if (resource.getOwner() != this) {
+                //等待并重试
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                continue;
+            }
+
+            //优先让其他线程执行
+            if (other.isActive()) {
+                log.info("yet to other thread");
+                resource.setOwner(other);
+                continue;
+            }
+
+            //执行
+            log.info("process the resource");
+
+            //执行完后让出资源给其他线程
+            active = false;
+            resource.setOwner(other);
+        }
+    }
+
+   }
+
+//resource
+public class Resource {
+
+    /**
+     *  资源拥有者
+     */
+    private Worker owner;
+}
+
+```
+
+执行结果：
+
+在worker同时活跃的情况下，一直发生谦让，无法执行资源。
+
+```
+10:54:20.776 [Thread-0] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.785 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.792 [Thread-0] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.797 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.802 [Thread-0] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.809 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.814 [Thread-0] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.820 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.824 [Thread-0] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+10:54:20.832 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
+....
+
+
+```
+
 
 > 感想
 
@@ -429,4 +539,5 @@ ArrayBlockingQueue通过等到通知机制 (用Condition实现）实现了阻塞
 选择方案的时候不够全面，往往只想到一种解决方式，例如比较暴力的使用互斥锁。结合另外
 两个问题，我们才会去考虑，怎么减小锁的粒度，能否用无锁方案，如何避免死锁或饥饿等问题，
 这样才能保证写出来的程序同时兼具性能和安全上的平衡。
+
 
