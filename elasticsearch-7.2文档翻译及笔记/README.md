@@ -1077,8 +1077,56 @@ $cat requests //请求体保存在requests文件中
 {"index" : {"_index" : "test", "_id" : "1"}}
 {"field1" : "value1"}
 
-$curl -s -H "Content-Type=applicatio/x-ndjson" -XPOST localhost:9200/_bulk --data-binary "@requests"; echo
-
-> 
+$curl -s -H "Content-Type=applicatio/x-ndjson" -XPOST localhost:9200/_bulk --data-binary "@requests"; 
 
 ```
+
+> 其他参数
+
+1.乐观并发控制（乐观锁 optimistic concurrency control） 
+
+每个index/delete 动作, 可以在metadata line 添加 if_seq_no 和 if_primary_no 参数，请求时会比较该参数，匹配才执行
+
+2. 版本控制(versioning)
+
+每个bulk项都可以添加version参数，index/delete请求时将自动使用version映射
+
+3. 路由(routing)
+
+每个bulk项都可以添加routing参数，index/delete请求时将自动使用routing映射
+
+4. 等待活跃分片(wait for active shards)
+
+添加该参数后将等待指定数量的活跃副本分片
+
+5. 刷新（refresh)
+
+执行api后，立即刷新保证新的变更对其他操作可见。注意，这里不会刷新所有的分片，
+仅刷新执行了bulk请求的分片，即它是分片级别的，并非索引级别的刷新（不会刷新索引下
+的所有分片）
+
+6. 更新 (update)
+
+update 动作可以通过retry_on_conflict 指定一个版本冲突重试次数。
+类似于update api，它支持doc和script两种更新方式，对于script，支持
+params和upsert等选项
+
+```
+POST _bulk
+{ "update" : {"_id" : "1", "_index" : "index1", "retry_on_conflict" : 3} }
+{ "doc" : {"field" : "value"} }
+{ "update" : { "_id" : "0", "_index" : "index1", "retry_on_conflict" : 3} }
+{ "script" : { "source": "ctx._source.counter += params.param1", "lang" : "painless", "params" : {"param1" : 1}}, "upsert" : {"counter" : 1}}
+{ "update" : {"_id" : "2", "_index" : "index1", "retry_on_conflict" : 3} }
+{ "doc" : {"field" : "value"}, "doc_as_upsert" : true }
+{ "update" : {"_id" : "3", "_index" : "index1", "_source" : true} }
+{ "doc" : {"field" : "value"} }
+{ "update" : {"_id" : "4", "_index" : "index1"} }
+{ "doc" : {"field" : "value"}, "_source": true}
+
+```
+
+7. 部分响应
+
+bulk API 的响应未必是完整的，当有的分片失败时，为了保证快速响应，它依旧返回结果，该
+结果仅包含成功分片的数据，因此它未必是完整的。
