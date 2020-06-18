@@ -1130,3 +1130,232 @@ POST _bulk
 
 bulk API 的响应未必是完整的，当有的分片失败时，为了保证快速响应，它依旧返回结果，该
 结果仅包含成功分片的数据，因此它未必是完整的。
+
+#### 重新索引(REINDEX API)
+
+reindex api 要求源索引开启_source
+
+Reindex 不会尝试去设置新索引，即它不会自动的拷贝源索引的配置，需要在reindex前
+手动的为新索引指定设置，映射，分片等。
+
+最常见的操作是将文档集从一个索引复制到另一个索引
+
+```
+
+POST _reindex {
+    "source" : {
+	"index" : "twitter"
+    },
+    "dest" : {
+	"index" : "new_twitter"
+    }
+}
+
+``` 
+
+> version_type
+
+_reindex 请求会为source index 创建一个snapshot，但是它不会涉及version conflicts
+的问题，因为该请求处理的是2个不同的索引。dest 元素可以设置version_type=internel
+或忽略该参数，当reindex发现文档的type和id恰好相同时，将发生overwrite.
+
+```
+POST _reindex
+{
+  "source": {
+    "index": "twitter"
+  },
+  "dest": {
+    "index": "new_twitter",
+    "version_type": "internal"
+  }
+}
+
+```
+
+如果version_type设置为externel, 目标索引将会保存源索引的版本，reindex时：
+
+对于target index:
+
+1. 文档不存在，则创建文档
+2. 文档的版本比较老时，将更新文档
+
+如果想要避免target的文档被更新，可以通过设置op_type=create来保证只有文档
+不存在时进行创建，否则将发生version conflict
+
+```
+POST _reindex
+{
+  "source": {
+    "index": "twitter"
+  },
+  "dest": {
+    "index": "new_twitter",
+    "op_type": "create"
+  }
+}
+
+```
+
+默认情况下，发生version conflicts会导致reindex请求退出终止。如果想要避免
+请求终止，可以设置conflicts:proceed属性，发生conflicts时仅记录，仍会继续
+处理下一个文档，返回结果将包含conflict的文档数量。
+
+```
+POST _reindex
+{
+  "conflicts": "proceed",
+  "source": {
+    "index": "twitter"
+  },
+  "dest": {
+    "index": "new_twitter",
+    "op_type": "create"
+  }
+}
+
+```
+
+如果想按条件进行reindex,可以为source index 增加query参数进行过滤：
+
+```
+POST _reindex
+{
+  "source": {
+    "index": "twitter",
+    "query": {
+      "term": {
+        "user": "kimchy"
+      }
+    }
+  },
+  "dest": {
+    "index": "new_twitter"
+  }
+}
+
+```
+
+如果想合并多个索引到一个新的索引，可以设置source为数组并添加它们
+
+```
+POST _reindex
+{
+  "source": {
+    "index": ["twitter", "blog"]
+  },
+  "dest": {
+    "index": "all_together"
+  }
+}
+
+```
+
+需要注意，如果索引存在id冲突，es会选择较后处理的作为最终文档，因此最后避免
+这种不确定性行为。
+
+
+我们可以通过size属性限制reindex文档的数量
+
+```
+POST _reindex
+{
+  "size": 1, //仅复制一条
+  "source": {
+    "index": "twitter"
+  },
+  "dest": {
+    "index": "new_twitter"
+  }
+}
+
+```
+
+例如按时间排序获取前1000条：
+
+```
+POST _reindex
+{
+  "size": 10000,
+  "source": {
+    "index": "twitter",
+    "sort": { "date": "desc" }
+  },
+  "dest": {
+    "index": "new_twitter"
+  }
+}
+
+```
+
+我们可以通过指定_source仅复制部分字段
+
+```
+POST _reindex
+{
+  "source": {
+    "index": "twitter",
+    "_source": ["user", "_doc"]
+  },
+  "dest": {
+    "index": "new_twitter"
+  }
+}
+
+```
+
+类似于_update_by_query，可以在复制的时候添加script，动态修改文档，
+包括文档的内容或元信息。例如修改特定文档的版本并删除字段：
+
+```
+POST _reindex
+{
+  "source": {
+    "index": "twitter"
+  },
+  "dest": {
+    "index": "new_twitter",
+    "version_type": "external"
+  },
+  "script": {
+    "source": "if (ctx._source.foo == 'bar') {ctx._version++; ctx._source.remove('foo')}",
+    "lang": "painless"
+  }
+}
+
+```
+
+script可以动态调整op_type为noop或delete以决定是否保持或删除文档。
+
+reindex请求可能会更改的四个元信息
+
+* _id
+* _index
+* _version
+    * 如果_version被设置为null，相当于version_type=internel, 当文档冲突时，会发生overwriter.
+* _routing
+    * keep -> 保持和source的routing一致
+    * discard -> 丢弃，routing设置为null
+    * =<some text> 设置为特定的routing
+
+例如，将匹配的文档负责到dest，并设置它的routing为cat
+```
+POST _reindex
+{
+  "source": {
+    "index": "source",
+    "query": {
+      "match": {
+        "company": "cat"
+      }
+    }
+  },
+  "dest": {
+    "index": "dest",
+    "routing": "=cat"
+  }
+}
+
+```
+
+
