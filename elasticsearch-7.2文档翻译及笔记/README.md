@@ -1338,7 +1338,7 @@ reindex请求可能会更改的四个元信息
     * discard -> 丢弃，routing设置为null
     * =<some text> 设置为特定的routing
 
-例如，将匹配的文档负责到dest，并设置它的routing为cat
+例如，将匹配的文档复制到dest，并设置它的routing为cat
 ```
 POST _reindex
 {
@@ -1358,4 +1358,246 @@ POST _reindex
 
 ```
 
+默认情况下，reindex每次复制1000个文档，可以通过source.size属性调整
 
+```
+POST _reindex
+{
+  "source": {
+    "index": "source",
+    "size": 100
+  },
+  "dest": {
+    "index": "dest",
+    "routing": "=cat"
+  }
+}
+
+```
+
+redindex也可以使用ingest node提供的pipeline对文档进行处理，通过dest.pipeline设置
+
+```
+
+POST _reindex
+{
+  "source": {
+    "index": "source"
+  },
+  "dest": {
+    "index": "dest",
+    "pipeline": "some_ingest_pipeline"
+  }
+}
+
+```
+
+> 从远程ES集群reindex
+
+指定source.remote，并在配置文件elasticsearch.yml中设置主机白名单
+
+```
+//设置白名单(逗号分隔，不需要加scheme（例如http://)
+reindex.remote.whitelist: "otherhost:9200, another:9200, 127.0.10.*:9200, localhost:*"
+
+//remote index
+POST _reindex
+{
+  "source": {
+    "remote": {
+      "host": "http://otherhost:9200", //必须包含scheme,例如http://
+      "username": "user", //开启base auth时需要
+      "password": "pass" //开启base auth时需要
+    },
+    "index": "source",
+    "query": {
+      "match": {
+        "test": "data"
+      }
+    }
+  },
+  "dest": {
+    "index": "dest"
+  }
+}
+
+```
+
+ps: remote reindex 不支持slice切片操作，无论是手动还是自动模式。
+
+* heap buffer 的限制
+
+remote reindex 使用堆内缓冲区缓存批次数据，最大限制为100M; 这意味着如果单个批次
+文档较大，可能会打爆buffer，这种情况应该调小批次的数量，避免总量超限。
+
+通过source.size属性设置, 注意，size和source.size作用不同，前者是限制reindex文档的数量。
+
+```
+POST _reindex
+{
+  "source": {
+    "remote": {
+      "host": "http://otherhost:9200"
+    },
+    "index": "source",
+    "size": 10, //减小到10，默认是1k
+    "query": {
+      "match": {
+        "test": "data"
+      }
+    }
+  },
+  "dest": {
+    "index": "dest"
+  }
+}
+
+```
+
+* 超时设置
+
+remote reindex 涉及远程通信，对socket和connection可设置超时时间，默认
+socket_read 1min， connection 10s。可通过source.remote.socket_timeout
+和source.remote.connect_timeout 设置
+
+```
+POST _reindex
+{
+  "source": {
+    "remote": {
+      "host": "http://otherhost:9200",
+      "socket_timeout": "1m",
+      "connect_timeout": "10s"
+    },
+    "index": "source",
+    "query": {
+      "match": {
+        "test": "data"
+      }
+    }
+  },
+  "dest": {
+    "index": "dest"
+  }
+}
+
+```
+
+> ssl 设置
+
+可在elasticsearch.yml中对ssl配置，实现加密访问（https)。ssl支持配置许多
+参数，例如reindex.ssl.certificate_authorities等（具体参考原文档）
+
+> 通用 URL 参数支持
+
+reindex 同样也支持写操作相关的一些通用参数：
+
+* wait_for_completion -> task
+    * task api
+        * cancle -> 取消任务
+        * rethrottling -> 重新调整限流策略
+* refresh
+* wait_for_active_shards -> timeout
+* scroll
+* requests_per_second
+
+>  调整字段名
+
+通过reindex可以在新的索引中替换旧索引的字段名，只需要通过script做一下替换：
+
+```
+POST _reindex
+{
+  "source": {
+    "index": "test"
+  },
+  "dest": {
+    "index": "test2"
+  },
+  "script": {
+    //将flag字段替换为tag字段
+    "source": "ctx._source.tag = ctx._source.remove(\"flag\")"
+  }
+}
+```
+
+> 切片
+
+类似于update_by_query/delete_by_query, 对于批操作，可以使用切片机制并发的执行请求.
+
+* 支持手动和自动切片
+* 注意父子请求URL参数的映射关系
+* 选择合适的切片数
+    * 最佳实践：=分片数
+
+> 批索引reindex
+
+不建议通过pattern匹配多个索引一次请求进行reindex，因为灵活性比较差。建议自己控制
+多个索引的reindex，例如实现一个脚本，循环串行或并行的处理它们，在部分索引失败后，
+只需要对失败的部分重试即可。
+
+例如：
+
+循环串行执行：
+
+```
+for index in i1 i2 i3 i4 i5; do
+  curl -HContent-Type:application/json -XPOST localhost:9200/_reindex?pretty -d'{
+    "source": {
+      "index": "'$index'"
+    },
+    "dest": {
+      "index": "'$index'-reindexed"
+    }
+  }'
+done
+
+```
+
+> reindex的其他用法
+
+* 通过reindex让现有文档适配新的index template
+
+新的template只能作用于新的索引，那么如何让旧的文档也采用新的template配置呢?
+
+```
+POST _reindex
+{
+  "source": {
+    "index": "metricbeat-*"
+  },
+  "dest": {
+    "index": "metricbeat"
+  },
+  "script": { //脚本创建新的索引名，例如metricbeat-2020.06.30 -> metricbeat-2020.06.30-1
+    "lang": "painless",
+    "source": "ctx._index = 'metricbeat-' + (ctx._index.substring('metricbeat-'.length(), ctx._index.length())) + '-1'"
+  }
+}
+
+```
+
+* 通过reindex 提取文档的子集（部分文档）
+
+提取随机的文档子集
+
+```
+POST _reindex
+{
+  "size": 10, //限制仅提取10条
+  "source": {
+    "index": "twitter",
+    "query": { //function_score_query -> 使用function调整文档分值
+      "function_score" : {
+        "query" : { "match_all": {} },
+        "random_score" : {} //随机函数，生成随机分值（0-1）
+      }
+    },
+    "sort": "_score" //根据_score进行排序， reindex默认是按照_doc进行排序
+  },
+  "dest": {
+    "index": "random_twitter"
+  }
+}
+
+```
