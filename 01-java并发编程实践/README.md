@@ -529,10 +529,6 @@ public class Resource {
 10:54:20.832 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
 ....
 
-
-```
-
-
 > 感想
 
 以往对并发编程问题的理解只有安全性这块，不能同时把活跃性和性能联系起来，这导致我们在
@@ -575,3 +571,40 @@ public class Resource {
 各自的实现方式不同而已。例如golang可能是通过channel机制实现，而java可以通过synchronize+wait/notify
 或Lock/Condiiton等，其背后是特定的管程模式。选择适合的模式，例如MESA并实现它，就能保证互斥和同步，
 即实现了所谓的并发编程能力。
+
+#### [线程状态]()
+
+> 笔记
+
+* jvm线程有哪些状态，状态之间如何转化？
+
+| 状态机 | NEW | RUNABLE | BLOCKED | WAITING/TIME_WAITING | TERMINATION |
+| :--: |:--: |:--: |:--: |:--: |:--: |
+| NEW | x | start | x | x | x |
+| RUNABLE | x | x | synchronize获取锁失败 | sleep/wait/lock/join/park | 执行结束 |
+| BLOCKED | x | synchronize获取锁成功 | x | x | x |
+| WAITING/TIME_WAITING| x | notify/unpark/interrupt | x | x | x |
+| TERMINATION | x| x | x| x | x |
+
+* jvm线程与系统线程的关系？
+
+jvm线程与系统线程是一一对应关系，状态有区别。
+
+| JVM线程状态 | NEW | RUNABLE | BLOCKED | WAITING/TIME_WAITING | TERMINATION |
+| :--: |:--: |:--: |:--: |:--: |:--: |
+| 系统线程状态 | x | RUNABLE/RUNNING/SLEEP(阻塞io) | SLEEP | SLEEP | DEAD/ZOMBIE |
+
+* interrupt事件对应的状态转换和行为
+
+| 状态机 | NEW | RUNABLE | BLOCKED | WAITING/TIME_WAITING | TERMINATION |
+| :--: |:--: |:--: |:--: |:--: |:--: |
+| interrupt | x | 1 设置线程标记位，isInterupt()=true  2 阻塞调用的线程则触发特定异常 | 不可中断 | 触发interruption 异常并清除标志位 | x |
+
+**如何响应interrupt中断信号？**
+
+1. 前提: 线程本身是可中断的，即不能为不可中断状态(进程b状态）或线程的 blocked 状态
+2. 主动监测信号 -> 适合Runable线程
+	* 查看isInterrupt是否为true, 并进行补偿处理
+3. 被动中断 -> 适合waiting的线程
+	* 触发Interruption异常，捕获异常进行特定的补偿处理
+ 
