@@ -572,7 +572,7 @@ public class Resource {
 或Lock/Condiiton等，其背后是特定的管程模式。选择适合的模式，例如MESA并实现它，就能保证互斥和同步，
 即实现了所谓的并发编程能力。
 
-#### [线程状态]()
+#### [09 | Java线程（上）：Java线程的生命周期](https://time.geekbang.org/column/article/86366)
 
 > 笔记
 
