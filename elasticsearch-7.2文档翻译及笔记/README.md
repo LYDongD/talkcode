@@ -1601,3 +1601,58 @@ POST _reindex
 }
 
 ```
+
+#### 词条向量 (Term Vector)
+
+通过term vector，可以查询文档或文档某个字段的词条统计信息，包括字段包含的词条，它们出现的位置，次数等信息。
+要查询term vector, 必须在索引的mappings添加term_vector
+
+```
+
+//配置term_vector
+PUT /twitter3
+{
+  "mappings" : {
+      "properties" : {
+        "user" : {
+          "term_vector" : "with_positions_offsets_payloads",
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        }
+      }
+  }
+}
+
+//按文档或字段查看term vector 词条统计
+
+GET /twitter/_termvectors/1
+GET /twitter/_termvectors/1?fields=message
+
+```
+
+词条向量支持查询词条信息，词条统计（默认关闭）和字段统计， 可以通过设置term_statistics=true开启词条统计（性能较差)
+
+* 词条信息（term information)
+    * 词条在字段中的频率
+    * 词条位置(position)
+    * 词条起始偏移量(start offset / end offsert)
+    * 词条大小（payloads)
+* 词条统计
+    * 总词条次数(term_freq) -> 在所有文档中出现的次数
+    * 文档次数(doc_freq) -> 保护该词条的文档数
+* 字段统计
+    * 文档数（doc_count)
+    * 累加每个词条文档数的综合（sum_doc_freq）
+    * 所有词条在文档的出现次数的总和（sum_ttf）
+ 
+> 词条过滤
+
+term支持一些可选参数，定义以上词条字段信息进行过滤，例如max_num_terms，
+限制每个字段能返回的最大词条数，默认是25 
+
+
