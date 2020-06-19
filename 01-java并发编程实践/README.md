@@ -589,6 +589,14 @@ public class Resource {
 | WAITING/TIME_WAITING| x | notify/unpark/interrupt | x | x | x |
 | TERMINATION | x| x | x| x | x |
 
+注意，这里有几个事件(阻塞）的状态转移需要特别关注：
+
+* 获取锁失败
+    * synchronize -> blocked
+    * Lock.lock -> waiting
+* 调用阻塞api
+    * 例如文件阻塞io -> runnable(系统为sleep)
+
 * jvm线程与系统线程的关系？
 
 jvm线程与系统线程是一一对应关系，状态有区别。
