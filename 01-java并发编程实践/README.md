@@ -241,8 +241,11 @@ class SafeCalc {
     at java.lang.Thread.run(Thread.java:745)
 
 
+/发生死锁的话jstack会输出死锁报告
+Found one Java-level deadlock:
 ```  
 
+* 通常会输出死锁提示：Found one Java-level deadlock
 * 查看线程状态：线程状态为BLOCKED
 * 查看持有的锁和等待的锁：
     * locked/waiting to lock -> 互相等待对方释放锁 
@@ -607,4 +610,153 @@ jvm线程与系统线程是一一对应关系，状态有区别。
 	* 查看isInterrupt是否为true, 并进行补偿处理
 3. 被动中断 -> 适合waiting的线程
 	* 触发Interruption异常，捕获异常进行特定的补偿处理
- 
+
+> 用java.util.concurrent.locks.Lock模拟死锁
+
+```
+public class DeadLockDemo2{
+
+    private final Lock lockA = new ReentrantLock();
+    private final Lock lockB = new ReentrantLock();
+    private Integer resourceA = 0;
+    private Integer resourceB = 0;
+
+    /**
+     *  多线程循环等待资源
+     *  1 多个线程访问多个有相互依赖的资源
+     *  2 访问顺序不一致
+     */
+    public void deadLock() throws Exception{
+
+        Thread threadA = new Thread(() -> {
+            lockA.lock();
+            try {
+                resourceA++;
+                try {
+                    sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                lockB.lock();
+                try {
+                    resourceB++;
+                }finally {
+                    lockB.unlock();
+                }
+            }finally {
+                lockA.unlock();
+            }
+
+        });
+
+        Thread threadB = new Thread(() -> {
+            lockB.lock();
+            try {
+                resourceB--;
+                try {
+                    sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                lockA.lock();
+                try {
+                    resourceA--;
+                }finally {
+                    lockA.unlock();
+                }
+            }finally {
+                lockB.unlock();
+            }
+        });
+
+        threadA.start();
+        threadB.start();
+    }
+
+    public static void main(String[] args) throws Exception{
+        DeadLockDemo2 deadLockDemo = new DeadLockDemo2();
+        deadLockDemo.deadLock();
+    }
+
+}
+
+```
+
+jstack <pid> 分析线程调用栈：
+
+```
+"Thread-1" #10 prio=5 os_prio=31 tid=0x00007f845f878800 nid=0x4f03 waiting on condition [0x000070000a4dc000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x0000000795710588> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+	at java.util.concurrent.locks.ReentrantLock$NonfairSync.lock(ReentrantLock.java:209)
+	at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:285)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2.lambda$deadLock$1(DeadLockDemo2.java:59)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2$$Lambda$2/1989780873.run(Unknown Source)
+	at java.lang.Thread.run(Thread.java:745)
+
+"Thread-0" #9 prio=5 os_prio=31 tid=0x00007f845f878000 nid=0x4d03 waiting on condition [0x000070000a3d9000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000007957105b8> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+	at java.util.concurrent.locks.ReentrantLock$NonfairSync.lock(ReentrantLock.java:209)
+	at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:285)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2.lambda$deadLock$0(DeadLockDemo2.java:37)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2$$Lambda$1/2074407503.run(Unknown Source)
+	at java.lang.Thread.run(Thread.java:745)
+
+
+Found one Java-level deadlock:
+=============================
+"Thread-1":
+  waiting for ownable synchronizer 0x0000000795710588, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "Thread-0"
+"Thread-0":
+  waiting for ownable synchronizer 0x00000007957105b8, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "Thread-1"
+
+Java stack information for the threads listed above:
+===================================================
+"Thread-1":
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x0000000795710588> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+	at java.util.concurrent.locks.ReentrantLock$NonfairSync.lock(ReentrantLock.java:209)
+	at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:285)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2.lambda$deadLock$1(DeadLockDemo2.java:59)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2$$Lambda$2/1989780873.run(Unknown Source)
+	at java.lang.Thread.run(Thread.java:745)
+"Thread-0":
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000007957105b8> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+	at java.util.concurrent.locks.ReentrantLock$NonfairSync.lock(ReentrantLock.java:209)
+	at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:285)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2.lambda$deadLock$0(DeadLockDemo2.java:37)
+	at com.example.demo.concurrent.liveLock.DeadLockDemo2$$Lambda$1/2074407503.run(Unknown Source)
+	at java.lang.Thread.run(Thread.java:745)
+
+Found 1 deadlock.
+
+```
+
+* 输出死锁检测报告，提示互相等待的阻塞线程
+* 阻塞线程的状态为waiting, 说明使用Lock获取锁失败后阻塞的状态是waiting
+    * synchronize实现方式获取锁失败状态是blocked
+
