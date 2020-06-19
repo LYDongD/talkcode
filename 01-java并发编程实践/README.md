@@ -593,7 +593,8 @@ public class Resource {
 
 * 获取锁失败
     * synchronize -> blocked
-    * Lock.lock -> waiting
+    * Lock.lock
+        * LockSupport.park -> waiting
 * 调用阻塞api
     * 例如文件阻塞io -> runnable(系统为sleep)
 
