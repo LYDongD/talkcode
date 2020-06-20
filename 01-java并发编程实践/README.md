@@ -78,6 +78,7 @@
     * 原子性+可见性保证资源的并发安全
 	* 对资源的读写操作进行加锁，则读到的资源一定是修改后的资源
 	* 如果仅对写加锁，无法保证读到变量的最新值
+	
 ```
 class SafeCalc { 
     
@@ -93,7 +94,6 @@ class SafeCalc {
 	value += 1; 
     }
 }
-
 ```
 
 * 锁与资源的关系
@@ -530,7 +530,8 @@ public class Resource {
 10:54:20.820 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
 10:54:20.824 [Thread-0] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
 10:54:20.832 [Thread-1] INFO com.example.demo.concurrent.liveLock.Worker - yet to other thread
-....
+
+```
 
 > 感想
 
