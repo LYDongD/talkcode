@@ -884,3 +884,6 @@ public class SafeCounter {
 ```
 
 对比cas无锁策略和synchronize互斥锁策略，测试后发现无锁策略的耗时更小。
+
+#### [13 | 理论基础模块热点问题答疑](https://time.geekbang.org/column/article/87749)
+
