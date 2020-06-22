@@ -834,5 +834,53 @@ Found 1 deadlock.
 	    * ThreadLocal 
 	    * 方法局部变量
 
+#### [12 | 如何用面向对象思想写好并发程序？](https://time.geekbang.org/column/article/87365)
 
-    
+> 笔记
+
+* 什么是面向对象思想
+    * 封装/继承/多态
+    * 为了统一管控共享资源的访问，需要统一入口
+        * 对资源进行封装，暴露统一的访问方法
+            * 方法内保证线程安全
+
+例如用Counter封装对共享变量val的访问:
+
+```
+public class SafeCounter {
+
+    private AtomicInteger count = new AtomicInteger();
+
+    private Integer get(){
+        return this.count.get();
+    }
+
+    private void addOne(){
+        this.count.addAndGet(1);
+    }
+
+    public static void main(String[] args) throws Exception{
+
+        SafeCounter counter = new SafeCounter();
+        Thread thread1 = new Thread(() -> {
+            for (int i = 0; i < 1000; i++){
+                counter.addOne();
+            }
+        });
+        Thread thread2 = new Thread(() -> {
+            for (int i = 0; i < 1000; i++){
+                counter.addOne();
+            }
+        });
+
+        thread1.start();
+        thread2.start();
+        thread1.join();
+        thread2.join();
+        log.info("result: {}", counter.get());
+    }
+}
+
+```
+
+对比cas无锁策略和synchronize互斥锁策略，测试后发现无锁策略的耗时更小。
