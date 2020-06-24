@@ -924,4 +924,123 @@ public class SafeCounter {
         * 如果对象指针不会逃逸，则有可能在栈上分配
     	* 方法退出则回收对象，不需要gc管控
 
+#### [14 | Lock和Condition（上）：隐藏在并发包中的管程](https://time.geekbang.org/column/article/87779)
 
+> Lock相比Synchronize的优势
+
+获取锁失败时，Lock可以实现有条件阻塞或不阻塞
+
+1. 支持锁中断
+
+lock.lockInterruptibly()
+
+* lock.lock()不可响应中断
+* synchronized 阻塞的线程不能响应中断
+
+```
+//等待的线程可以响应中断
+try {
+    lock.lockInterruptibly();
+} catch (InterruptedException e) {
+    e.printStackTrace();
+    return;
+}
+try {
+    this.count++;
+    sleep(600000);
+} catch (InterruptedException e) {
+    e.printStackTrace();
+} finally {
+    lock.unlock();
+}
+
+```
+
+2. 支持锁超时
+
+lock.tryLock(10, TimeUnit,SECOND)
+
+* 超时返回false
+
+```
+//等待的时候可以设置超时, 且支持中断
+boolean result = false;
+try {
+    result = lock.tryLock(10, TimeUnit.SECOND)
+    if (!result){
+        log.info("获取锁超时");
+        return;
+    }
+} catch (InterruptedException e) {
+    e.printStackTrace();
+    return;
+}
+try {
+    this.count++;
+    sleep(600000);
+} catch (InterruptedException e) {
+    e.printStackTrace();
+} finally {
+    lock.unlock();
+}
+
+```
+3. 支持非阻塞的获取锁
+
+lock.tryLock()
+
+```
+
+//支持非阻塞获取锁，获取失败直接返回false
+boolean result = lock.tryLock();
+if (!result){
+    log.info("获取锁失败");
+    return;
+}
+try {
+    this.count++;
+    sleep(600000);
+} catch (InterruptedException e) {
+    e.printStackTrace();
+} finally {
+    lock.unlock();
+}
+
+```
+
+> Lock如何保证共享变量的可见性
+
+加锁时，cas修改锁的state, 具有和volatile一致的JMM语义
+
+```
+final void lock() {
+    if (compareAndSetState(0, 1))
+        setExclusiveOwnerThread(Thread.currentThread());
+    else
+        acquire(1);
+}
+
+```
+
+释放锁时, 最后会写state（volatile)
+
+```
+protected final boolean tryRelease(int releases) {
+    int c = getState() - releases;
+    if (Thread.currentThread() != getExclusiveOwnerThread())
+        throw new IllegalMonitorStateException();
+    boolean free = false;
+    if (c == 0) {
+        free = true;
+        setExclusiveOwnerThread(null);
+    }
+    setState(c);
+    return free;
+}
+
+```
+
+加锁时会读volatile，解锁时会写volatile, 根据JMM的happens-before原则，volatile的写对
+volatile的读可见，意味着上一个线程解锁前对共享变量的更新对下一个获取锁的线程可见。
+
+所以，Lock通过volatile的读写保证了和synchronize一致的语义，从而保证了共享变量的可见性。
