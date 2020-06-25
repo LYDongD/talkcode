@@ -1044,3 +1044,30 @@ protected final boolean tryRelease(int releases) {
 volatile的读可见，意味着上一个线程解锁前对共享变量的更新对下一个获取锁的线程可见。
 
 所以，Lock通过volatile的读写保证了和synchronize一致的语义，从而保证了共享变量的可见性。
+
+#### [15 | Lock和Condition（下）：Dubbo如何用管程实现异步转同步？](https://time.geekbang.org/column/article/88487)
+
+> 相比synchronize和Object#notify实现的管程，Lock/Condition实现的管程有哪些优势？
+
+* synchronize的锁对象和条件变量必须为同一个对象，意味着获取锁的时候我们只能指定一个条件变量
+    * Lock和Condition是分离的，一把锁可以同时锁定多个条件变量，例如ArrayBlockingQueue
+            * Condition notFull
+            * Condition notEmpty
+    * 相比之下，Lock/Condition实现的管程更加灵活，可以实现多条件的等待通知。
+
+> dubbo如何实现异步转同步
+    
+* 为什么要异步转同步？
+    * 通信协议例如tcp本身就是异步的，发送和接收数据的线程不同
+            * 如果发送请求的线程不等待对方的响应，那么它就是异步的，天然是不等待的，请求发送后线程不会阻塞
+            * 如果发送请求的线程阻塞直到获取对方响应为止，那么它就是同步的 
+    * 如何实现发送和接收线程之间的等待通知呢？
+        * 发送请求的线程 -> 阻塞，并等待响应（条件为“已接收到响应”)
+        * 接收请求的线程 -> 唤醒，基于等待条件去唤醒请求的线程
+        * dubbo通过Lock/Condition, 这里的Condition是“已接收到响应”，来实现等待同时从而完成异步转同步
+    * 接收响应的线程如何把响应和请求对应起来？
+        * 发送请求时，生成requestId，并将请求id和条件关联：requestId : condition，缓存
+            * 不同的发送线程(请求），requestId不同，对应的条件也不同，每个请求线程都会等待自己的条件
+        * 接收响应时，从response取出requestId， 从缓存中取出条件并唤醒该requestId对应的请求线程
+            * 相当于通过requestId将请求和响应关联起来，并通过等待通知机制实现（请求等待响应通知）实现异步转同步
+
