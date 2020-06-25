@@ -1051,8 +1051,8 @@ volatile的读可见，意味着上一个线程解锁前对共享变量的更新
 
 * synchronize的锁对象和条件变量必须为同一个对象，意味着获取锁的时候我们只能指定一个条件变量
     * Lock和Condition是分离的，一把锁可以同时锁定多个条件变量，例如ArrayBlockingQueue
-            * Condition notFull
-            * Condition notEmpty
+        * Condition notFull
+        * Condition notEmpty
     * 相比之下，Lock/Condition实现的管程更加灵活，可以实现多条件的等待通知。
 
 > dubbo如何实现异步转同步
