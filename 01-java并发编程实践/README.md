@@ -1071,3 +1071,96 @@ volatile的读可见，意味着上一个线程解锁前对共享变量的更新
         * 接收响应时，从response取出requestId， 从缓存中取出条件并唤醒该requestId对应的请求线程
             * 相当于通过requestId将请求和响应关联起来，并通过等待通知机制实现（请求等待响应通知）实现异步转同步
 
+#### [16 | Semaphore：如何快速实现一个限流器？](https://time.geekbang.org/column/article/88499)
+
+* 信号量与管程模型的区别
+    * 应用场景不同
+        * 管程：当前线程阻塞直到某个条件满足为止 
+            * 网络通信中的同步请求，例如dubbo的同步RPC/http同步请求
+                * 等待响应返回
+            * 阻塞队列
+                * 入队时等待队列不满
+                * 出队时等待队列非空
+        * 信号量: 限制能够获取资源的线程数量   
+            * 对象池/连接池等
+                * 资源用完时阻塞获取资源的线程
+                * 资源释放时唤醒等待的线程重新获取资源
+
+    * 线程数限制不同
+        * 管程或锁限制同时只有一个线程访问资源
+        * 信号量限制一个或多个线程访问资源
+            * 理论上信号量可以替代管程或锁
+
+* 信号量实现对象池
+
+> 要求
+
+1. 实现一个包含10个对象的对象池
+2. 一个线程获取一个对象
+3. 线程获取对象后打印当前线程，并延时，模拟任务耗时
+4. 同时创建100个线程执行任务，观察阻塞情况，阻塞时打印日志
+
+```
+public class ObjectPool<T> {
+
+    /**
+     * 信号量，控制获取资源的线程数
+     */
+    private final Semaphore counter;
+
+    //多线程读写list，要求线程安全的list
+    private final List<T> objects = new CopyOnWriteArrayList<>();
+
+    public ObjectPool(Integer size, Class<T> clazz) throws Exception {
+        this.counter = new Semaphore(size);
+        for (int i = 0; i < size; i++) {
+            objects.add((clazz.newInstance()));
+        }
+    }
+
+    /**
+     * 提交任务
+     */
+    public void submit(Consumer<T> consumer) {
+        //获取信号，无可用信号则阻塞
+        try {
+            this.counter.acquire();
+        } catch (InterruptedException ex) {
+            ex.printStackTrace();
+            return;
+        }
+        T object = null;
+        try {
+            //获取对象并执行
+            object = objects.remove(0);
+            consumer.accept(object);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            //归还对象并释放信号量
+            this.objects.add(object);
+            this.counter.release();
+        }
+    }
+
+
+    public static void main(String[] args) throws Exception {
+        ObjectPool<String> objectPool = new ObjectPool<>(10, String.class);
+        for (int i = 0; i < 100; i++) {
+            Thread thread = new Thread(() -> {
+                objectPool.submit(s -> {
+                    log.info("thread: {}", Thread.currentThread().getName());
+                    try {
+                        sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                });
+            });
+            thread.start();
+        }
+    }
+}
+
+```
+                
