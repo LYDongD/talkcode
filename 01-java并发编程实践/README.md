@@ -1164,3 +1164,72 @@ public class ObjectPool<T> {
 
 ```
                 
+#### [17 | ReadWriteLock：如何快速实现一个完备的缓存？](https://time.geekbang.org/column/article/88909)
+
+> 如何排查可能因为读写锁导致的线程锁死问题（永久阻塞）
+
+* 锁升级：先获取读锁，未释放的情况下继续获取写锁
+* 锁降级: 先获取死锁，未释放的情况下继续获取读锁
+
+ReentrantReadWriteLock 支持降级，不支持升级
+
+实现一段锁升级代码
+
+```
+ /**
+  *  模拟锁升级（会导致线程永久阻塞）
+  */
+ public void lockUpgrade(){
+     //读共享变量
+     readLock.lock();
+     try {
+         log.info("current count: {}", this.get());
+         sleep(3000);
+         writeLock.lock();
+         try {
+             this.addOne();
+         }finally {
+             writeLock.unlock();
+         }
+     }catch (Exception e){
+         e.printStackTrace();
+     }finally {
+         readLock.unlock();
+     }
+ }
+```
+jstack 导出线程调用栈
+
+```
+
+"pool-1-thread-3" #11 prio=5 os_prio=31 tid=0x00007fc2b42a4000 nid=0x5103 waiting on condition [0x000070000f8ff000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x0000000795f41420> (a java.util.concurrent.locks.ReentrantReadWriteLock$NonfairSync)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+	at java.util.concurrent.locks.ReentrantReadWriteLock$WriteLock.lock(ReentrantReadWriteLock.java:943)
+	at com.example.demo.concurrent.readWriteLock.ReadWriteLockDemo.lockUpgrade(ReadWriteLockDemo.java:47)
+	at com.example.demo.concurrent.readWriteLock.ReadWriteLockDemo.lambda$main$0(ReadWriteLockDemo.java:65)
+	at com.example.demo.concurrent.readWriteLock.ReadWriteLockDemo$$Lambda$1/1288141870.run(Unknown Source)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+	at java.lang.Thread.run(Thread.java:745)o
+
+```
+
+线程处于waiting状态(阻塞），查看调用栈，阻塞在WriteLock.lock上，说明有可能因为无法获取写锁导致永久阻塞
+
+> 如何查看进程包含的线程资源使用情况
+
+* 查看进程包含的线程
+    * pstree -p <pid>
+    * ps -efT | grep <pid>
+
+* 查看线程的资源使用情况
+    * top -Hp <pid>
+```
