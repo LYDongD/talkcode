@@ -1267,4 +1267,26 @@ jstack 导出线程调用栈
 3. 写锁支持快照读，阻塞其他加锁的读
 
 
-#### []()
+#### [18 | StampedLock：有没有比读写锁更快的锁？](https://time.geekbang.org/column/article/89456)
+
+> 笔记
+
+* 为什么说StampedLock比读写锁要快？
+    * StampedLock增加了无锁策略 -> 乐观锁
+	* 类似于数据库的乐观锁，通过version来保证更新安全，StampedLock通过stamp保证更新安全
+	    * 乐观读：返回stamp -> tryOptimisticRead()
+	    * 写时验证：validate(stamp)
+		* 验证失败 -> 共享变量被其他线程更新
+		    * 重新取最新的共享变量值
+		    * 升级为悲观读锁 -> readLock()
+			* 等价于读写锁，并发读，读写互斥
+			* 读写锁模式下保证可读到最新的变量
+    * 乐观锁在读多写少的场景性能更好
+	* 无锁，并发读，减少线程因为阻塞导致的延时并提高吞吐量
+	* 在读少写多的场景下，乐观锁可能频繁更新失败重试，造成cpu繁忙，占用cpu时间
+	    * 可升级为读写锁或互斥锁，避免频繁重试
+
+* 使用StampedLock需要注意什么问题？
+    * 不支持重入
+    * 中断阻塞的StampedLock会导致cpu使用率飙升
+	* todo 为什么？
