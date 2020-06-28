@@ -1233,3 +1233,30 @@ jstack 导出线程调用栈
 * 查看线程的资源使用情况
     * top -Hp <pid>
 ```
+
+> 如何理解innodb中的读锁
+
+默认读不加锁，可以并发读写（写的时候可以读），不可以并发写。有点类似于copyOnWrite机制，innodb是通过MVVC来实现的，读写的是数据的不同快照。它的问题是可能无法读到最新写入的值，有三种隔离级别来调整读的可靠性：
+
+* read uncommited 读未提交
+* read commited 读已提交
+* repeated read 可重复读
+
+如果想保证实时的读，就要在写的时候禁止读，即加入读锁
+
+* innodb有2种读锁：
+    * lock in share mode -> 类似于java中的ReentranLock读写锁
+        * 可以并发读，读写互斥
+    * lock for update -> 类似于java中的Lock 互斥锁
+        * 读写互斥，读互斥
+
+接下来看下在可重复读级别下，两种锁模式的互斥情况：
+
+1. lock in share mode, 观察是否可以同时读；
+2. lock for update， 观察是否可以同时读
+3. 读lock in share mode, 观察是否可以写入;
+4. 读lock for update, 观察是否可以写入;
+5. 写锁的情况下，是否可以读lock in share mode
+6. 写锁的情况下，是否可以读lock for update
+
+//todo 读锁实验
