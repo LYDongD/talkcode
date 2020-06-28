@@ -1247,8 +1247,9 @@ jstack 导出线程调用栈
 * innodb有2种读锁：
     * lock in share mode -> 类似于java中的ReentranLock读写锁
         * 可以并发读，读写互斥
-    * lock for update -> 类似于java中的Lock 互斥锁
-        * 读写互斥，读互斥
+    * lock for update 
+        * 读写互斥
+	* 可以快照读，但是不允许加s锁或x锁的读
 
 接下来看下在可重复读级别下，两种锁模式的互斥情况：
 
@@ -1259,4 +1260,11 @@ jstack 导出线程调用栈
 5. 写锁的情况下，是否可以读lock in share mode
 6. 写锁的情况下，是否可以读lock for update
 
-//todo 读锁实验
+* 结论
+
+1. lock in share mode 可以并发读，读写互斥
+2. lock for update 支持快照读，读写互斥，阻塞其他加锁的读（s或x锁）
+3. 写锁支持快照读，阻塞其他加锁的读
+
+
+#### []()
