@@ -1289,3 +1289,108 @@ jstack 导出线程调用栈
     * 不支持重入
     * 中断阻塞的StampedLock会导致cpu使用率飙升
 	* todo 为什么？
+
+#### [19 | CountDownLatch和CyclicBarrier：如何让多线程步调一致？](https://time.geekbang.org/column/article/89461)
+
+>  CountDownLatch是如何实现等待通知的？
+
+场景：线程阻塞，等待其他线程完成任务后，由最后一个线程唤醒它再执行任务
+
+实现：通过内部类Sync（实际上是AQS的子类）通过锁获取和释放，间接实现了等待通知机制
+
+* 条件: 变量state 作为计数器和等待通知的条件
+* 等待：await() -> sync#tryAcquireShared()
+    * 对于AQS来说，获取锁失败（返回false)则阻塞当前线程，加入等待队列
+	* sync应该在state计数器不为0时阻塞线程（返回false)
+* 通知：countDown() -> sync#tryReleaseShared()
+    * 对于AQS来说，释放锁成功（返回true)时幻想等待的线程
+	* sync应该在state计数器更减为0时唤醒等待线程（返回true)
+
+```
+
+//计数器不为0时等待：
+protected int tryAcquireShared(int acquires) {
+    //state计数器为0时，获取锁成功，返回1，不等待；否则阻塞当前线程，加等待队列
+    return (getState() == 0) ? 1 : -1;
+}
+
+//计数器为0时唤醒等待线程
+protected boolean tryReleaseShared(int releases) {
+    // Decrement count; signal when transition to zero
+    for (;;) {
+        int c = getState();
+	//避免重复释放锁（重复唤醒等待线程）
+        if (c == 0)
+            return false;
+	//cas更新计数器
+        int nextc = c-1;
+        if (compareAndSetState(c, nextc))
+	    //计数器为0时（最后一个countDown的线程），唤醒等待线程
+            return nextc == 0;
+    }
+}
+
+```
+
+> CycleBarrier如何实现等待通知？
+
+场景：线程间相互等待，直到所有线程都完成任务触发同步回调再执行下一批任务
+
+实现: 通过并发包管程（Lock+Condition) 实现等待通知机制
+
+* 条件：变量count
+* 等待/通知：await()
+    * count--
+    * count不为0时（还有线程未完成任务）时阻塞当前线程，加入该条件的等待队列
+    * count为0时，执行回调（Runnable), 并开启下一批任务
+	* 复原count
+	* 唤醒所有基于count等待的线程
+
+
+```
+
+//计数器为0时：通知
+if (index == 0) {  // tripped
+    boolean ranAction = false;
+    //同步执行回调函数
+    try {
+        final Runnable command = barrierCommand;
+        if (command != null)
+            command.run();
+        ranAction = true;
+	//开启下一轮
+        nextGeneration();
+        return 0;
+    } finally {
+        if (!ranAction)
+            breakBarrier();
+    }
+}
+
+//重置计数器并通知等待线程开启下一轮任务
+private void nextGeneration() {
+    // signal completion of last generation
+    trip.signalAll();
+    // set up next generation
+    count = parties;
+    generation = new Generation();
+}
+
+
+
+
+//等待或超时等待
+for (;;) {
+    try {
+        if (!timed)
+            trip.await();
+        else if (nanos > 0L)
+            nanos = trip.awaitNanos(nanos);
+    } catch (InterruptedException ie) {
+	...
+    }
+}
+
+```
+
+
