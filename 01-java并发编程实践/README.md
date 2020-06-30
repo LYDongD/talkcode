@@ -1393,4 +1393,39 @@ for (;;) {
 
 ```
 
+#### [20 | 并发容器：都有哪些“坑”需要我们填？](https://time.geekbang.org/column/article/90201)
 
+> 常见的并发容器有哪些？它的核心思想是什么？
+
+* List
+    * CopyOnWriteArrayList -> copy on write思想
+	* 快照读，读写不互斥
+	* 写互斥
+* Map
+    * ConcurrentHashMap 
+	* cas + 局部synchronize
+    * ConcurrentSkipListMap
+	* todo
+* Set
+    * ConcurrentSkipListSet
+	* todo 
+    * CopyOnWriteSet -> 类似于CopyOnWriteList
+
+* Queue
+    * BlockingQueue -> 双端阻塞队列
+	* LinkedBlockingDequeue
+    * BlockingDqueue -> 单端队列
+	* ArrayBlockingQueue
+	    * 基于条件notFull和notEmpty实现等待通知，入队和出队使用同一把锁
+	* LinkedBlockingQueue
+	    * 锁的使用方面和ArrayBlockingQueue有什么不同？ 
+	* SynchronizeQueue
+	    * 等待的条件是什么？
+	* PriorityBlockingQueue
+	    * 堆(用数组实现？）
+	* DelayQueue
+	    * 堆（用数组实现？）
+    * ConcurentLinkedQueue
+	* 非阻塞队列，使用场景？
+    * ConcurrentLinkedDequeue
+	* 非阻塞双端队列，使用场景？
