@@ -1412,9 +1412,9 @@ for (;;) {
     * CopyOnWriteSet -> 类似于CopyOnWriteList
 
 * Queue
-    * BlockingQueue -> 双端阻塞队列
+    * BlockingQueue -> 阻塞队列
 	* LinkedBlockingDequeue
-    * BlockingDqueue -> 单端队列
+    * BlockingDqueue -> 双端阻塞队列
 	* ArrayBlockingQueue
 	    * 基于条件notFull和notEmpty实现等待通知，入队和出队使用同一把锁
 	* LinkedBlockingQueue
