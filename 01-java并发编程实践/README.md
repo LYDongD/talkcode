@@ -1429,3 +1429,71 @@ for (;;) {
 	* 非阻塞队列，使用场景？
     * ConcurrentLinkedDequeue
 	* 非阻塞双端队列，使用场景？
+
+#### [21 | 原子类：无锁工具类的典范](https://time.geekbang.org/column/article/90515)
+
+> 如何用原子工具类实现整数自增
+
+依次使用AtomicInteger和AtomicIntegerFieldUpdater实现
+
+```
+
+    private int count;
+
+    private volatile int volatileCount;
+
+    private final AtomicInteger atomicCount = new AtomicInteger();
+
+    private final AtomicInteger atomicCount2 = new AtomicInteger();
+
+    private static final AtomicIntegerFieldUpdater<Atomic> atomicIntegerFieldUpdater = AtomicIntegerFieldUpdater.newUpdater(Atomic.class, "volatileCount");
+
+    //非原子操作
+    public void count10k() {
+        for (int i = 0; i < 10000; i++) {
+            this.count++;
+        }
+    }
+
+    //原子类自增
+    public void atomicCount10k() {
+        for (int i = 0; i < 10000; i++) {
+            this.atomicCount.getAndIncrement();
+        }
+    }
+
+    //原子类cas+自旋
+    public void atomicCount10k2() {
+        for (int i = 0; i < 10000; i++) {
+            int expect;
+            int update;
+            do {
+                expect = this.atomicCount2.get();
+                update = expect + 1;
+            } while (!this.atomicCount2.compareAndSet(expect, update));
+        }
+    }
+
+    //原子操作类，反射
+    public void atomicCount10k3() {
+        for (int i = 0; i < 10000; i++) {
+            atomicIntegerFieldUpdater.addAndGet(this, 1);
+        }
+    }
+
+
+```
+
+> 怎么实现一个乐观锁？
+
+* 乐观锁本质上是无所重试方案
+    * 当CAS = false，意味发生了冲突，需要进行重试
+    * 例如innodb乐观锁，通过自定义version字段保证原子性
+	* select xxx, versionOld from table where xxxx
+	* update table set xxx and version = version + 1 where version = versionOld
+	    * 该操作为cas
+    * 例如redis乐观锁：watch - multi - exec
+	* exec前如果有其他连接更新了key，当前连接将更新失败
+	    * 其他连接更新导致version+1，执行exec时比较version不匹配
+
+
