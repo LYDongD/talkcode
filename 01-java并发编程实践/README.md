@@ -1488,12 +1488,37 @@ for (;;) {
 
 * 乐观锁本质上是无所重试方案
     * 当CAS = false，意味发生了冲突，需要进行重试
-    * 例如innodb乐观锁，通过自定义version字段保证原子性
-	* select xxx, versionOld from table where xxxx
-	* update table set xxx and version = version + 1 where version = versionOld
+        * 例如innodb乐观锁，通过自定义version字段保证原子性
+	        * select xxx, version as versionOld from table where xxxx
+	        * update table set xxx and version = version + 1 where version = versionOld
 	    * 该操作为cas
     * 例如redis乐观锁：watch - multi - exec
-	* exec前如果有其他连接更新了key，当前连接将更新失败
+	    * exec前如果有其他连接更新了key，当前连接将更新失败
 	    * 其他连接更新导致version+1，执行exec时比较version不匹配
 
+#### [22 | Executor与线程池：如何创建正确的线程池？](https://time.geekbang.org/column/article/90771)
 
+> Executors工具类都提供了哪些线程池，直接使用这些线程池可能发生什么问题？
+
+* 无容阻塞队列 -> newCacheThreadPool()
+    * SynchronousQueue -> 入队操作阻塞等待出队操作(同步阻塞）
+        * 如果消费线程很慢，不断有新任务加入会导致线程数暴涨
+    * 线程数为Integer.MAX_VALUE -> 可能会耗尽内存资源
+* 多个队列 -> newWorkStealingPool()
+    * ForkJoinPool
+    * 线程窃取机制提高线程利用率（并发度)
+        * 空闲的线程可以消费其他队列的任务 -> 无法保证任务消费的有序性
+* 固定线程数 -> newFixedThreadPool()
+    * 采用无界阻塞队列：LinkedBlockingQueue
+    * 可能会耗尽内存资源
+* 调度线程池 -> newScheduledThreadPool
+    * DelayWorkQueue -> 延时队列，按任务执行时间排序
+
+> 如何监控和处理线程池异常？
+
+* 监控
+    * 指标：队列饱和度，活跃线程数
+    * 方法：启动专门的监控线程，定时轮询线程池获取队列长度，线程数等指标
+* 处理异常
+    * 拒绝策略：降级/持久化
+    * 任务执行异常: 内部捕获并打印日志
