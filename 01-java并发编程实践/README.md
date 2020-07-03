@@ -1522,3 +1522,32 @@ for (;;) {
 * 处理异常
     * 拒绝策略：降级/持久化
     * 任务执行异常: 内部捕获并打印日志
+
+
+#### [23 | Future：如何用多线程实现最优的“烧水泡茶”程序？](https://time.geekbang.org/column/article/91292)
+
+> 如何获取线程池任务执行的结果？
+
+* 线程池返回Future -> future.get()获取结果
+    * Future实现类是什么？
+        * FutureTask -> 实现Runnable和Future
+            * Runnable: 可以直接被线程执行
+            * Future: 可以获取任务执行结果
+    * FutureTask#get 如何实现阻塞 -> 基于任务状态的流转
+        * 等待的条件：任务完成的状态state
+            * state <= Completing时阻塞
+        * 阻塞方法
+            * LockSupport.park()
+        * 阻塞后等待线程加入等待队列(链表实现）
+    * 任务怎么执行？执行完后如何唤醒被阻塞线程
+        * 提交任务的时候，被包装成FutureTask，交给线程(work)执行
+        * 任务执行结束后，将线程从等待队列移除，并唤醒线程
+            * LockSupport.unpark(t)
+    
+* 对比dubbo异步转同步实现的Future，有什么不同?
+    * FutureTask通过LockSupport实现阻塞和唤醒，并用链表实现的队列管理线程
+    * dubbo等待通知是通过Lock/Condition实现
+        * 设置是否收到响应(isDone)为条件，检测状态(是否收到响应）等待条件，并关联请求id和该Future
+        * 响应后通过请求id取出Future, 设置结果，修改状态并并唤醒条件
+    * Future都需要保存任务执行结果，get的时候如果任务状态未完成需要阻塞线程，只是实现等待通知的方式不同
+    
