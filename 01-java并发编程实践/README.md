@@ -1551,3 +1551,60 @@ for (;;) {
         * 响应后通过请求id取出Future, 设置结果，修改状态并并唤醒条件
     * Future都需要保存任务执行结果，get的时候如果任务状态未完成需要阻塞线程，只是实现等待通知的方式不同
     
+
+#### [24 | CompletableFuture：异步编程没那么难](https://time.geekbang.org/column/article/91569)
+
+> 如何使用CompletableFuture实现异步编程
+
+* CompletableFuture有哪些能力
+    * 实现了Future接口 -> 可以获取异步任务执行的结果
+    * 实现了CompletionStage，将子任务抽象为一个子阶段，任务之间通过不同的方式关联
+        * 串行关系
+        * 并行关系
+        * 汇聚关系
+            * AND 
+            * OR
+
+例如C任务依赖A和B的执行的结果，且A,B之间可并行，那么实现方式如下：
+
+* A 与 B 是并行关系
+* C 与 A 和 B 是汇聚与关系
+
+```
+A = CompletableFuture.suplyAsync(supplierA)
+B = CompletableFuture.suplyAsync(supplierB)
+C = A.thenCombine(b, cFunc)
+```
+
+> 使用CompletableFuture需要注意什么？
+
+* 使用自定义线程池进行业务隔离
+    * 默认ForkJoinPool, 延时大的任务可能影响其他任务
+* 异常处理
+    * CompletableStage在api层面支持异常处理
+        * catch -> exceptionlly()
+        * finally -> whenComplete()/handle()
+
+#### [10 | 递归：如何用三行代码找到“最终推荐人”？](https://time.geekbang.org/column/article/41440)
+
+* 什么问题可以用递归解决？
+    * 一个问题可以分解为几个子问题的解
+    * 子问题和当前问题的求解方式一致
+    * 存在终止条件
+
+* 如何找出递归的递推公式？
+    * 类比证明中的数学归纳法
+        * 计算初始条件值：f(1)
+        * 在f(n-1)成立的情况下证明f(n)成立
+            * 在f(n-1)成立的情况下，如何求解f(n)
+
+* 递归存在的问题
+    * 递归深度过大导致栈溢出
+        * 限制栈深度
+    * 重复计算
+        * 使用缓存解决
+    * 如何处理无限递归的问题
+        * 例如 A -> B -> C -> A
+            * 缓存已经处理过的节点，例如A节点
+            * 处理C时，优先从缓存取，没有才创建A
+            * 以上方法可以解决spring依赖注入时循环依赖的问题
