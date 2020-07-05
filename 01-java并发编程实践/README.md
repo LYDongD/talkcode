@@ -1585,26 +1585,39 @@ C = A.thenCombine(b, cFunc)
         * catch -> exceptionlly()
         * finally -> whenComplete()/handle()
 
-#### [10 | 递归：如何用三行代码找到“最终推荐人”？](https://time.geekbang.org/column/article/41440)
+#### [25 | CompletionService：如何批量执行异步任务？](https://time.geekbang.org/column/article/92245)
 
-* 什么问题可以用递归解决？
-    * 一个问题可以分解为几个子问题的解
-    * 子问题和当前问题的求解方式一致
-    * 存在终止条件
+> CompletionService如何管理异步任务？
 
-* 如何找出递归的递推公式？
-    * 类比证明中的数学归纳法
-        * 计算初始条件值：f(1)
-        * 在f(n-1)成立的情况下证明f(n)成立
-            * 在f(n-1)成立的情况下，如何求解f(n)
+* 阻塞队列 -> 默认LinkedBlockingQueue
+    * 异步任务执行完成后入队
+        * 保证任务执行结果的顺序
 
-* 递归存在的问题
-    * 递归深度过大导致栈溢出
-        * 限制栈深度
-    * 重复计算
-        * 使用缓存解决
-    * 如何处理无限递归的问题
-        * 例如 A -> B -> C -> A
-            * 缓存已经处理过的节点，例如A节点
-            * 处理C时，优先从缓存取，没有才创建A
-            * 以上方法可以解决spring依赖注入时循环依赖的问题
+* 什么情况下使用CompletionService?
+    * 执行多个异步任务
+    * 需要获取异步任务执行的结果
+    * 需要保证结果的顺序，即先执行完的先返回
+
+```
+ExecutorService executorService = Executors.newFixedThreadPool(3);
+CompletionService<Long> completionService = new ExecutorCompletionService<>(executorService);
+completionService.submit(() -> {
+    Thread.sleep(5000);
+    return System.currentTimeMillis();
+});
+completionService.submit(() -> {
+    Thread.sleep(3000);
+    return System.currentTimeMillis();
+});
+completionService.submit(() -> {
+    Thread.sleep(1000);
+    return System.currentTimeMillis();
+});
+
+//先执行结束的先返回
+for (int i = 0; i < 3; i++){
+    Long time = completionService.take().get();
+    log.info("time: {}", time);
+}
+
+```
