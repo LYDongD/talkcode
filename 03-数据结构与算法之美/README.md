@@ -132,3 +132,167 @@
         * 使用CAS
             * 例如disruptor，采用乐观锁避免线程阻塞
 
+#### [10 | 递归：如何用三行代码找到“最终推荐人”？](https://time.geekbang.org/column/article/41440)
+
+* 什么问题可以用递归解决？
+    * 一个问题可以分解为几个子问题的解
+    * 子问题和当前问题的求解方式一致
+    * 存在终止条件
+
+* 如何找出递归的递推公式？
+    * 类比证明中的数学归纳法
+        * 计算初始条件值：f(1)
+        * 在f(n-1)成立的情况下证明f(n)成立
+            * 在f(n-1)成立的情况下，如何求解f(n)
+
+* 递归存在的问题
+    * 递归深度过大导致栈溢出
+        * 限制栈深度
+    * 重复计算
+        * 使用缓存解决
+    * 如何处理无限递归的问题
+        * 例如 A -> B -> C -> A
+            * 缓存已经处理过的节点，例如A节点
+            * 处理C时，优先从缓存取，没有才创建A
+            * 以上方法可以解决spring依赖注入时循环依赖的问题
+
+#### [11 | 排序（上）：为什么插入排序比冒泡排序更受欢迎？](https://time.geekbang.org/column/article/41802)
+
+> 如何实现一个冒泡排序
+
+优化点：
+
+1. 逆序度为0时提前退出：每一轮记录是否发生过交换
+2. 交换操作：用位异或运算进行交换
+
+```
+func bubbleSort(nums []int) {
+    if len(nums) <= 1 {
+        return
+    }
+
+    n := len(nums)
+    for i := 0; i < n; i++ {
+        hasSwap := false
+        for j := 0; j < n-i-1; j++ {
+            if nums[j] > nums[j+1] {
+                swap(nums, j, j+1)
+                hasSwap = true
+            }
+        }
+
+        if !hasSwap {
+            break
+        }
+    }
+}
+
+func swap(nums []int, a, b int) {
+    tmp := nums[a] ^ nums[b]
+    nums[a] = tmp ^ nums[a]
+    nums[b] = tmp ^ nums[b]
+}
+
+```
+
+> 如何实现插入排序？
+
+参考jdk的排序算法qSort, 数据规模较小时采用插入排序，查找插入位置时不时从后往前，而是通过二分法查找
+
+```
+func insertSort(nums []int) {
+    if len(nums) <= 1 {
+        return
+    }
+
+    n := len(nums)
+    for i := 1; i < n; i++ {
+        j := i - 1
+        num := nums[i]
+        for ; j >= 0; j-- {
+            if nums[j] > num {
+                nums[j+1] = nums[j]
+            } else {
+                break
+            }
+        }
+
+        nums[j+1] = num
+    }
+}
+
+```
+
+> 如何评价排序算法的好坏？
+
+3个指标：
+
+* 时间复杂度（最好，最差和平均）
+* 空间复杂度
+* 稳定性 -> 排序过程中是否会改变相同元素的相对位置
+    * 稳定性用于在多因素排序的场景中，例如先根据A排序，相同的A里面根据B排序
+        * 先根据B排序，再根据A排序，因为稳定性，相同的A的B是有序的，不会发生变化
+
+
+#### [12 | 排序（下）：如何用快排思想在O(n)内查找第K大元素？](https://time.geekbang.org/column/article/41913)
+
+> 如何在无序数组中查找第K大的元素？
+
+* 分区 + 递归
+    * 分区后，判断第K大元素在哪个区间，对该区间递归查找
+
+```
+func findK(nums []int, k int) int {
+    if len(nums) < k {
+        panic("k must not excess nums' bound")
+    }
+
+    return findKRecursively(k, nums, 0, len(nums)-1)
+}
+
+func findKRecursively(k int, nums []int, start, end int) int {
+    if start == end {
+        return nums[start]
+    }
+
+    pivot := nums[end]
+    j := start
+    for i := start; i < end; i++ {
+        if nums[i] < pivot {
+            swap(nums, i, j)
+            j++
+        }
+    }
+
+    swap(nums, j, end)
+
+    //find next range
+    if j+1 == k {
+        return nums[j]
+    } else if j < k {
+        return findKRecursively(k, nums, j+1, end)
+    } else {
+        return findKRecursively(k, nums, start, j-1)
+    }
+
+}
+
+func swap(nums []int, a, b int) {
+    nums[a], nums[b] = nums[b], nums[a]
+}
+
+```
+
+> 快排和归并有什么区别？
+
+* 快排 = 分区 + 递归 
+    * 先分区，完成后进行递归  
+    * 不是稳定排序，比较交换时可能会将相同元素中前面的交换到后面
+* 归并 = 递归 + 合并 
+    * 先递归，返回时合并
+    * 需要借助临时数组，不是原地排序
+    * 可实现文件大数据排序
+        * 分割：从文件读指定大小的数据，排序，写入子文件
+        * 归并：假设有10个已经排好序的子文件，准备10个并行的io流(指针），基于文件指针，每次读10个子文件各一条数据，选择最小的一个缓存，并更新该文件指针
+        * 合并：缓存达到一定规模时写入文件，该文件是全局有序的
+
