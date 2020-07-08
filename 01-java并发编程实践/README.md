@@ -1621,3 +1621,81 @@ for (int i = 0; i < 3; i++){
 }
 
 ```
+
+#### [26 | Fork/Join：单机版的MapReduce](https://time.geekbang.org/column/article/92524)
+
+> 什么场景下使用fork/join框架
+
+* 可以使用分治法处理的问题或任务适合采用fork/join框架多线程执行
+    * 定义任务：RecursiveTask	
+	* 分治法一般通过递归实现
+	* 任务内分解成子任务，fork线程递归调用子任务
+
+    * 例如fibnacci求解f(n)
+	* f(n) = fork:f(n-1) + fork:f(n-2)
+	    * fork+join 会创建一个新的子任务入队，交给别的线程执行
+	    * compute 子任务直接在当前线程执行
+
+    * 提交任务
+	* 使用ForkJoinPool提交一个RecursiveTask
+	    * ForkJoinPool#invoke(RecursiveTask recursiveTask)
+	* ForkJoinPool相比其他线程池有什么区别？
+	    * 多个队列
+	    * 线程可以无锁方式窃取其他队列的任务
+		* 相对的，kafka消费线程空闲时依然不能消费其他分区
+    
+
+#### [27 | 并发工具类模块热点问题答疑](https://time.geekbang.org/column/article/92850)
+
+> 并发包易错点总结
+
+* while(true) 易错点
+    * 避免变成死循环 -> 造成cpu繁忙
+	* 注意退出条件，满足条件后break
+	* 在类cas场景中，线程适当休眠控制循环频率并避免活锁
+	    * sleep
+	    * Thread.yet
+
+* 回调函数易错点
+    * 搞清楚回调函数被执行的线程
+	* 同步模式：在当前线程同步回调
+	* 异步模式：回调函数单独启动一个新的线程执行
+    * 类比spring的事件通知机制，当事件发生时，回调相关函数
+	* spring同样支持同步和异步2种
+	    * 同步，事件发生的线程同步回调
+	    * 异步，在一个线程池内回调
+
+* 线程分析注意点
+    * 为了在导出线程调用栈后能方便定位问题，增强可读性，往往需要给线程设置一个可读性强的名字
+
+设置方法如下：
+
+```
+	Executor executor = Executors.newFixedThreadPool(3, new ThreadFactory() {
+            private AtomicInteger count = new AtomicInteger(0);
+            @Override
+            public Thread newThread(Runnable r) {
+                return new Thread(r, "custom-executor-" + count.getAndIncrement());
+            }
+        });
+
+```
+
+#### [28 | Immutability模式：如何利用不变性解决并发问题？](https://time.geekbang.org/column/article/92856)
+
+> String 和 CopyOnWriteArrayList 的写时复制有什么区别？
+
+* 内部数据结构
+    * String内部维护不可变的字符数组 final char value[]，引用是不可变
+    * CopyOnWriteArrayList内部维护一个volatile的对象数组Object[]，引用可变
+
+* 写时复制
+    * String写，实际上会复制内部数组并创建或从享元池中获取新的对象
+    * CopyOnWriteList写，加锁，复制内部数组并替换原数组引用
+	* 对于集合本身，并没有创建新的对象，而是替换了内部引用，因此要保证写得原子性
+	    * 读写并发，写写互斥
+	    * 互斥锁实际上可以替换成原子引用类的cas+自旋的机制实现
+    * 两者都属于不可变模式，前者指的是整个对象包括对象的属性不可变，后者对象的内部数组引用可变，但是数组本身内容不可修改
+	
+
+
