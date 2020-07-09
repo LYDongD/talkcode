@@ -1698,4 +1698,20 @@ for (int i = 0; i < 3; i++){
     * 两者都属于不可变模式，前者指的是整个对象包括对象的属性不可变，后者对象的内部数组引用可变，但是数组本身内容不可修改
 	
 
+#### [29 | Copy-on-Write模式：不是延时策略的COW](https://time.geekbang.org/column/article/93154)
+
+> CopyOnWrite机制在不同领域方面的应用
+
+* 操作系统
+    * fork 
+* docker
+    * 镜像设计 -> todo
+* git
+    * todo
+* 函数式编程
+* 系统场景 -> 适合读多写少的场景
+    * 实现一个负载均衡路由器
+	* ConcurrentHashMap + CopyOnWriteList
+	    * 接口 -> 节点列表
+
 
