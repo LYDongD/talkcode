@@ -334,3 +334,36 @@ func swap(nums []int, a, b int) {
 	* 本质上是利用概率解决极端问题
 
 
+#### [15 | 二分查找（上）：如何用最省内存的方式实现快速查找功能？](https://time.geekbang.org/column/article/42520)
+
+> 用递归实现二分查找
+
+
+```
+func binarySearch(nums []int, target int) int {
+    if len(nums) == 0 {
+        return -1
+    }
+    return binarySearchRecursively(nums, target, 0, len(nums) -1)
+}
+
+//分区 + 递归
+func binarySearchRecursively(nums []int, target, start, end int) int{
+    if start > end {
+        return -1
+    }
+
+    mid := start + (end - start) / 2
+    if nums[mid] == target {
+        return mid
+    }
+
+    if nums[mid] > target {
+        return binarySearchRecursively(nums, target, start, mid - 1)
+    }else {
+        return binarySearchRecursively(nums, target, mid + 1, end)
+    }
+}
+
+
+```
