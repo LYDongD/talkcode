@@ -1714,4 +1714,18 @@ for (int i = 0; i < 3; i++){
 	* ConcurrentHashMap + CopyOnWriteList
 	    * 接口 -> 节点列表
 
+#### [30 | 线程本地存储模式：没有共享，就没有伤害](https://time.geekbang.org/column/article/93745)
 
+> 为什么说ThreadLocal存在内存泄露问题
+
+Thread -> ThreadLocalMap -> ThreadLocal : Object 
+    * 其中key: ThreadLocal是weak reference，可以被gc回收
+    * 其中value：强引用，不会自动被回收，除非线程对象释放
+    * 如果线程在线程池中，则会造成内存泄露：null -> Object
+        * 线程引用无效的key，但是value并不会被释放
+
+解决方案：
+    * 手动释放
+        * ThreadLocal#remove
+        * 即在finally方法中移除掉
+    

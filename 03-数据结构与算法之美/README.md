@@ -334,3 +334,123 @@ func swap(nums []int, a, b int) {
 	* 本质上是利用概率解决极端问题
 
 
+####[16 | 二分查找（下）：如何快速定位IP对应的省份地址？](https://time.geekbang.org/column/article/42733)
+
+> 二分法变式
+
+* 存在相同元素时，如何查找第一个和最后一个
+* 不要求相等，如何查找第一个或最后一个大于等于或小于等于target的元素
+* 如何在循环数组中查找目标元素
+
+> 有序数组中查找第一个和目标值相等的元素
+
+```
+//find first ele equal 2 target
+func search(nums []int, target int) int {
+    if len(nums) == 0 {
+        return -1
+    }
+
+    start, end := 0, len(nums)-1
+    for start <= end {
+        mid := start + (end-start)>>1
+        if nums[mid] > target {
+            end = mid - 1
+        } else if nums[mid] < target {
+            start = mid + 1
+        } else {
+            //key: found equal and check if it's the first one 
+            if mid == 0 || nums[mid-1] != target {
+                return mid
+            }
+
+            end = mid - 1
+        }
+    }
+
+    return -1
+}
+
+```
+
+> 有序数组中查找最后一个小于或等于目标值的元素
+
+```
+//find last ele less than target
+func search2(nums []int, target int) int {
+    if len(nums) == 0 {
+        return -1
+    }
+
+    start, end := 0, len(nums)-1
+    for start <= end {
+        mid := start + (end-start)>>1
+        if nums[mid] > target {
+            mid = end - 1
+        } else {
+            //check if it's the last one less than target
+            if mid == len(nums)-1 || nums[mid+1] > target {
+                return mid
+            }
+
+            start = mid + 1
+        }
+    }
+
+    return -1
+}
+
+```
+
+> 在一个循环数组中查找目标元素
+
+循环数组可以分成两个区间: 升序的大区间和升序的小区间，并且所有元素满足 大区间 > 小区间
+
+和普通数组不同的是，当我们发现 target < mid 时，target有可能在右边区间：
+
+1. mid在大区间 -> nums[mid] > tail
+2. target在小区间 -> target <= tail
+
+同理，当target > mind时，target有可能在左边区间：
+
+1. mid在小区间 -> nums[mid] < head
+2. target在大区间 -> target >= head
+
+综上，在普通数组二分法的基础上增加大小区间的判断。二分法本质上还是一个怎么选择下一个区间的问题，其关键是找到target落在哪里的判断添加。
+
+```
+//find ele in a circular ordered array
+func search3(nums []int, target int) int {
+    if len(nums) == 0 {
+        return -1
+    }
+
+    head, tail := nums[0], nums[len(nums)-1]
+    start, end := 0, len(nums)-1
+    for start <= end {
+        mid := start + (end-start)>>1
+        if nums[mid] == target {
+            return mid
+        }
+
+        if nums[mid] > target {
+            //may be on smaller part
+            if nums[mid] > tail && target <= tail {
+                start = mid + 1
+            } else {
+                end = mid - 1
+            }
+        } else {
+            //may be on bigger part
+            if nums[mid] < head && target >= head {
+                end = mid - 1
+            } else {
+                start = mid + 1
+            }
+        }
+    }
+
+    return -1
+}
+
+```
