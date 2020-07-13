@@ -53,3 +53,122 @@ GET /original:hamlet,hamlet-pirate/_search
 }
 
 ```
+
+#### 文档操作
+
+> 问题
+
+添加文档，报错：
+
+```
+{
+  "error": {
+    "root_cause": [
+      {
+        "type": "cluster_block_exception",
+        "reason": "index [hamlet-raw] blocked by: [FORBIDDEN/12/index read-only / allow delete (api)];"
+      }
+    ],
+    "type": "cluster_block_exception",
+    "reason": "index [hamlet-raw] blocked by: [FORBIDDEN/12/index read-only / allow delete (api)];"
+  },
+  "status": 403
+}
+
+```
+
+日志：
+
+```
+[2020-07-13T19:47:34,483][INFO ][o.e.c.r.a.DiskThresholdMonitor] [node-1] low disk watermark [85%] exceeded on [zIHuCzhLS6acQfAKdW_PSQ][node-1][/home/elastic/data2/nodes/0] free: 2.4gb[12.7%], replicas will not be assigned to this node
+
+```
+
+原因：系统磁盘容量不足，可用内存低于es的期望值，则将索引转化为只读模式
+
+解决方案：
+
+```
+PUT /_settings
+{
+  "index.blocks.read_only_allow_delete" : null
+}
+
+``` 
+
+> 操作
+
+1 创建索引：hamlet-raw
+
+```
+PUT hamlet-raw
+{
+  "settings": {
+    "number_of_shards": 1, 
+    "number_of_replicas": 3
+  }
+}
+
+```
+
+2 创建文档
+
+```
+#指定文档id
+POST /hamlet-raw/_doc/1
+{
+  "line" : "To be, or not to be: that is the question"
+}
+
+#自动生成id
+POST /hamlet-raw/_doc
+{
+  "text_entry":"Whether tis nobler in the mind to suffer",
+  "line_number":"3.1.66"
+}
+```
+
+3 更新或添加新字段
+
+```
+#partial doc 模式
+POST /hamlet-raw/_update/1
+{
+  "doc" : {
+    "line_number" : "3.1.64"  
+  }
+}
+
+#script 模式
+POST /hamlet-raw/_update/LQZHSHMB7W4lefW00iRy 
+{
+  "script" : "ctx._source.line_number='3.1.5'"
+}
+
+#批量操作多个文档
+POST _bulk
+{"update" : {"_id" : 1, "_index" : "hamlet-raw"}}
+{"script" : "ctx._source.speaker='hamlet'"}
+{"update" : {"_id" : "LQZHSHMB7W4lefW00iRy","_index" : "hamlet-raw"}}
+{"script" : "ctx._source.speaker='hamlet'"}
+
+```
+
+4 查找更新
+
+```
+
+#修改所有文档
+POST /hamlet-raw/_update_by_query
+{
+  "script" : {
+    "lang" : "painless",
+    "source": "ctx._source.speaker2='hamlet'"
+  }
+}
+
+```
+
+
+
+
