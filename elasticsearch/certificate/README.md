@@ -56,6 +56,8 @@ GET /original:hamlet,hamlet-pirate/_search
 
 #### 文档操作
 
+[document api](https://www.elastic.co/guide/en/elasticsearch/reference/7.2/docs.html)
+
 > 问题
 
 添加文档，报错：
