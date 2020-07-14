@@ -171,6 +171,43 @@ POST /hamlet-raw/_update_by_query
 
 ```
 
+5 替换字段名
 
+```
+#创建ingest pipeline，指定rename processor
+POST /hamlet-raw/_update_by_query?pipeline=hamlet-raw
+{
+  "query" : {
+    "term" : {
+      "_id" : 1
+    }
+  }
+}
 
+#应用在指定索引
+POST /hamlet-raw/_update_by_query?pipeline=hamlet-raw
 
+```
+
+6 保存脚本并应用与查找更新操作
+
+```
+
+#创建脚本，增加字段并按条件赋值
+POST _scripts/set_is_hamlet
+{
+  "script" : {
+    "lang": "painless",
+    "source": "if (ctx._source.speaker == 'HAMLET') {ctx._source.is_hamlet = true} else {ctx._source.is_hamlet = false}"
+  }
+}
+
+#应用脚本
+POST hamlet/_update_by_query
+{
+  "script" : {
+    "id" : "set_is_hamlet"
+  }
+}
+
+```
