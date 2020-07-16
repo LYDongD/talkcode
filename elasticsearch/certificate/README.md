@@ -651,3 +651,152 @@ PUT /_ingest/pipeline/split_act_scene_line
 POST /hamlet-new/_update_by_query?pipeline=split_act_scene_line
 
 ```
+
+#### 文档映射 （mappings)
+
+1 设置字段类型和参数
+
+```
+#设置line_number不支持聚合查询（doc_values : false)
+PUT /hamlet_1
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "properties": {
+      "speaker" : {
+        "type": "text"
+      },
+      "line_number" : {
+        "type": "keyword",
+        "doc_values" : false
+      },
+      "text_entry" : {
+        "type": "text"
+      }
+    }
+  }
+}
+
+```
+2 通过reindex的方式修改索引mappings
+
+* 先创建新的索引，采用新的mappings, 例如为字段添加multi_fields
+* 使用reindex api copy 文档
+
+```
+#先创建新索引，增加multi_fields, 支持全文搜索
+PUT hamlet_2
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "properties": {
+      "speaker" : {
+        "type": "keyword",
+        "fields": {
+          "tokens" : {
+            "type" : "text"
+          }
+        }
+      },
+      "line_number" : {
+        "type": "keyword",
+        "doc_values" : false
+      },
+      "text_entry" : {
+        "type": "text"
+      }
+    }
+  }
+}
+
+#reindex
+POST /_reindex
+{
+  "source": {
+    "index": "hamlet_1"
+  },
+  "dest": {
+    "index": "hamlet_2"
+  }
+}
+
+```
+
+3 对象类型查询问题 (object vs nested)
+
+对象类型字段如果是一个对象数组，底层索引时会扁平化，即合并嵌套子对象
+
+例如：
+
+A ：[{B:1, C:2}, {B:3,C:4}] -> A.B : [1,3] , A.C : [2.4]
+
+这样当我们搜索 "A.B=1，A.C=4" 的文档时，依然会返回两个结果；实际上并没有一个子对象同时满足该条件。
+
+**解决方案：声明nested类型 + nested query**
+
+```
+#声明relationship为nested类型，子对象包含name和type两个属性
+PUT hamlet_2
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "properties": {
+      "name" : {
+        "type": "text"
+      },
+      "relationship" : {
+        "type": "nested", 
+        "properties": {
+          "name" : {
+            "type" : "keyword"
+          },
+          "type" : {
+            "type" : "keyword"
+          }
+        }
+      }
+    }
+  }
+}
+
+#用nested query 进行查询
+
+```
+#nested query 要求path下的条件必须在一个nested对象内满足
+GET /hamlet_2/_search
+{
+  "query": {
+    "nested": {
+      "path": "relationship",
+      "query": {
+        "bool": {
+          "must": [
+            {
+              "match": {
+                "relationship.name": "gertrude"
+              }
+            },
+            {
+              "match": {
+                "relationship.type": "friend"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+
+```
+
+```
