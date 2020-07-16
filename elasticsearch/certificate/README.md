@@ -160,7 +160,7 @@ POST _bulk
 
 ```
 
-#修改所有文档
+#修改所有文档，添加新字段
 POST /hamlet-raw/_update_by_query
 {
   "script" : {
@@ -169,11 +169,38 @@ POST /hamlet-raw/_update_by_query
   }
 }
 
+#使用ingest pipeline 
+#定义set processor
+PUT /_ingest/pipeline/add-field
+{
+  "processors" : [{
+    "set" : {
+      "field" : "speaker3",
+      "value" : "hamlet"
+    }
+  }]
+}
+
+POST /hamlet-raw/_update_by_query?pipeline=add-field
+
 ```
 
 5 替换字段名
 
 ```
+#定义rename processor
+PUT _ingest/pipeline/rename_pipeline
+{
+  "processors": [
+    {
+      "rename": {
+        "field": "line",
+        "target_field": "text_entry"
+      }
+    }
+  ]
+}
+
 #创建ingest pipeline，指定rename processor
 POST /hamlet-raw/_update_by_query?pipeline=hamlet-raw
 {
@@ -193,6 +220,7 @@ POST /hamlet-raw/_update_by_query?pipeline=hamlet-raw
 
 ```
 
+#方法1：应用stored script
 #创建脚本，增加字段并按条件赋值
 POST _scripts/set_is_hamlet
 {
@@ -209,5 +237,417 @@ POST hamlet/_update_by_query
     "id" : "set_is_hamlet"
   }
 }
+
+
+#方法2：应用pipeline
+#定义一个脚本pipeline, 注意这里不使用_source
+PUT _ingest/pipeline/add-is-ghost
+{
+  "processors": [
+    {
+      "script": {
+        "lang" : "painless",
+        "source": "if (ctx.speaker == 'Ghost') {ctx.is_ghost = true} else {ctx.is_ghost=false}"
+      }
+    }
+  ]
+}
+
+#应用pipeline
+POST /hamlet/_update_by_query?pipeline=add-is-ghost
+{
+  "query" : {
+    "match_all" :{
+    }
+  }
+}
+
+```
+
+7 删除指定文档
+
+注意删除时使用term查询要保证字段类似是：keyword
+
+```
+#方法1： update_by_query + op
+POST /hamlet/_update_by_query
+{
+  "script":{
+    "lang" : "painless",
+    "source" : "ctx.op = 'delete'"
+  },
+  "query" : {
+    "terms" : {
+      "speaker.keyword" : ["KING CLAUDIUS", "LAERTES"]
+    }
+  }
+}
+
+#方法2： delete_by_query
+
+POST /hamlet/_delete_by_query
+{
+  "query" : {
+    "terms" : {
+      "speaker.keyword" : ["HORATIO", "Ghost"]
+    }
+  }
+}
+
+#方法3：用bool-should 复合查询代替terms
+POST /hamlet/_delete_by_query
+{
+  "query" : {
+    "bool" : {
+      "should" : [{
+        "term" : {
+          "speaker.keyword" : "BERNARDO"
+        }
+      }, {
+        "term" : {
+          "speaker.keyword" : "FRANCISCO"
+        }
+      }]
+    }
+  }
+}
+
+```
+
+ps: term查询和match查询的区别？
+
+* term -> 类似于sql查询，支持精确，模糊，范围等查询方式
+    * term 查询不会进行分词，因此不适合text类型的字段
+    * term 适合keyword类型的字段
+    * terms 支持多词项匹配
+* match -> 全文搜索
+    * match 查询文本会进行分词，并进行分词匹配
+    * match 适合text类型的字段
+
+
+#### 索引模板操作 （index template)
+
+1 创建模板并应用到指定模式
+
+```
+
+#创建hamlet-template， 匹配hamlet-和hamlet_前缀的索引
+PUT /_template/hamlet-template
+{
+  "index_patterns" : ["hamlet-*", "hamlet_*"],
+  "settings" : {
+    "number_of_shards" : 1,
+    "number_of_replicas" : 0
+  }
+}
+
+#删除多个索引，逗号隔开
+DELETE hamlet-test, hamlet2
+
+#更新模板，增加mappings，模板变更不会影响当前索引，需要删除重建
+PUT /_template/hamlet-template
+{
+  "index_patterns" : ["hamlet-*", "hamlet_*"],
+  "settings" : {
+    "number_of_shards" : 1,
+    "number_of_replicas" : 0
+  },
+  "mappings": {
+    "properties": {
+      "speaker" : {
+        "type" : "keyword"
+      },
+      "line_number" : {
+        "type" : "keyword"
+      },
+      "text_entry" : {
+        "type" : "text",
+        "analyzer" : "english"
+      }
+    }
+  }
+}
+
+
+
+```
+
+2 在模板中限制dynamic mappings
+
+```
+#dynamic设置成strict，如果索引未在template定义的字段将返回错误
+PUT /_template/hamlet-template
+{
+  "index_patterns" : ["hamlet-*", "hamlet_*"],
+  "settings" : {
+    "number_of_shards" : 1,
+    "number_of_replicas" : 0
+  },
+  "mappings": {
+    "dynamic" : "strict",
+    "properties": {
+      "speaker" : {
+        "type" : "keyword"
+      },
+      "line_number" : {
+        "type" : "keyword"
+      },
+      "text_entry" : {
+        "type" : "text",
+        "analyzer" : "english"
+      }
+    }
+  }
+}
+
+```
+
+3 添加dynamic mapping template 影响自动映射的类型推断
+
+```
+
+#1 numner_开头的字段都映射为intger 2 string类型的字段都映射为keyword
+PUT /_template/hamlet-template
+{
+  "index_patterns" : ["hamlet-*", "hamlet_*"],
+  "settings" : {
+    "number_of_shards" : 1,
+    "number_of_replicas" : 0
+  },
+  "mappings": {
+    "dynamic_templates" : [
+      {
+        "integers" : {
+          "match" : "number_*",
+          "mapping" : {
+            "type" : "integer"
+          }
+        }
+      },{
+        "unanalyzed_text" : {
+          "match_mapping_type" : "string",
+          "mapping" : {
+            "type" : "keyword"
+          }
+        }
+      }
+    ]
+  }
+}
+
+```
+
+#### 索引别名 (index alias)
+
+1 定义索引别名，指向两个索引，该别名将合并两个索引的文档
+
+```
+POST /_aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "hamlet-1",
+        "alias": "hamlet"
+      }
+    },
+    {
+      "add" : {
+        "index" : "hamlet-2",
+        "alias": "hamlet"
+      }
+    }
+  ]
+}
+
+```
+
+2 指定其中一个索引为写入索引，通过别名索引文档时将路由到写入索引
+
+```
+
+#设置hamlet-1为写入索引
+POST /_aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "hamlet-1",
+        "alias": "hamlet",
+        "is_write_index" : true
+      }
+    },
+    {
+      "add" : {
+        "index" : "hamlet-2",
+        "alias": "hamlet"
+      }
+    }
+  ]
+}
+
+#通过别名索引，将路由到hamlet-1写入
+POST /hamlet/_doc
+{
+   "line_number" : "1.1.3",
+   "speaker" : "LIAM",
+   "text_entry" : "test write index"
+}
+
+```
+#### reindex + alias 重新索引
+
+通过reindex调整文档结构或修改属性值
+
+```
+#定义script并在reindex时使用script
+POST /_scripts/control_reindex_batch
+{
+  "script" : {
+    "lang": "painless",
+    "source": "if (ctx._source.reindexBatch != null) {ctx._source.reindexBatch += params.increment} else {ctx._source.reindexBatch = 1}"
+  }
+}
+
+#创建新索引
+PUT hamlet-new
+{
+  "settings": {
+    "number_of_shards": 2
+    , "number_of_replicas": 0
+  }
+}
+
+#将别名索引reindex到新的索引, 并启用2个分片线程
+POST /_reindex?slices=2
+{
+  "source": {
+    "index" : "hamlet"
+  },
+  "dest": {
+    "index": "hamlet-new"
+  },
+  "script": {
+    "id" : "control_reindex_batch",
+    "params": {
+      "increment" : 1
+    }
+  }
+}
+
+#调整hamlet别名，指向新的索引，删除旧的索引
+POST /_aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "hamlet-new",
+        "alias": "hamlet",
+        "is_write_index" : false
+      }
+    },
+    {
+      "remove" : {
+        "index" : "hamlet-2",
+        "alias" : "hamlet"
+      }
+    },
+    {
+      "remove" : {
+        "index" : "hamlet-1",
+          "alias" : "hamlet"
+      }
+    }
+  ]
+}
+
+```
+
+#### 通过pipeline处理器对文档进行处理
+
+```
+#模拟pipline -> 切割，生成新字段，删除临时字段
+POST /_ingest/pipeline/_simulate
+{
+  "pipeline": {
+    "processors": [
+    {
+      "split": {
+        "field": "line_number",
+        "target_field" : "line_number_arr",
+        "separator": "\\."
+      }
+    },
+    {
+      "set": {
+        "field": "number_act",
+        "value": "{{line_number_arr.0}}"
+      }
+    },
+    {
+      "set": {
+        "field": "number_scene",
+        "value": "{{line_number_arr.1}}"
+      }
+    },
+    {
+      "set": {
+        "field": "number_line",
+        "value": "{{line_number_arr.2}}"
+      }
+    },
+    {
+      "remove": {
+        "field": "line_number_arr"
+      }
+    }
+  ]
+  },
+  "docs": [{
+    "_source" : {
+      "line_number" : "1.2.3"
+    }
+  }]
+}
+
+#模拟无误后，创建pipeline
+PUT /_ingest/pipeline/split_act_scene_line
+{
+  "processors": [
+    {
+      "split": {
+        "field": "line_number",
+        "target_field" : "line_number_arr",
+        "separator": "\\."
+      }
+    },
+    {
+      "set": {
+        "field": "number_act",
+        "value": "{{line_number_arr.0}}"
+      }
+    },
+    {
+      "set": {
+        "field": "number_scene",
+        "value": "{{line_number_arr.1}}"
+      }
+    },
+    {
+      "set": {
+        "field": "number_line",
+        "value": "{{line_number_arr.2}}"
+      }
+    },
+    {
+      "remove": {
+        "field": "line_number_arr"
+      }
+    }
+  ]
+}
+
+#在指定索引上应用pipline更新
+POST /hamlet-new/_update_by_query?pipeline=split_act_scene_line
 
 ```
