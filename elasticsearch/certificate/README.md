@@ -770,7 +770,6 @@ PUT hamlet_2
 
 #用nested query 进行查询
 
-```
 #nested query 要求path下的条件必须在一个nested对象内满足
 GET /hamlet_2/_search
 {
@@ -799,4 +798,302 @@ GET /hamlet_2/_search
 
 ```
 
+#### 父子文档（parent-child) 
+
+1 为当前索引添加父子文档关联字段 （join类型）
+
 ```
+
+#定义新的索引，增加父子文档关联字段：character_or_line, 父子关系为character -> line 为一对多关系 
+PUT hamlet_3
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "properties": {
+      "character_or_line" : {
+        "type": "join",
+        "relations" : {
+          "character" : "line"
+        }
+      }
+    }
+  }
+}
+
+```
+2 给name=hamlet(_id=C0) 的 文档添加关联字段，作为父文档；给speaker=hamlet的文档添加关联字段，作为子文档
+
+```
+
+#更新父文档
+POST /hamlet_3/_update_by_query
+{
+  "script" : "ctx._source.character_or_line='character'",
+  "query" : {
+    "term": {
+      "_id": {
+        "value": "C0"
+      }
+    }
+  }
+}
+
+#用script + pipline 更新子文档
+#定义脚本，为特定子文档添加关联字段，设置parent
+PUT /_scripts/init_lines
+{
+  "script" : {
+    "lang" : "painless",
+    //用临时变量hashmap避免NPL异常
+    "source" : """
+      HashMap map = new HashMap();
+      map.name = 'line';
+      map.parent = params.characterId;
+      ctx._source.character_or_line = map
+    """
+  }
+}
+
+#为子文档添加父文档信息（parent)时需要保证在同一个分片，即需要指定父文档的routing
+
+#通过pipeline修改_routing
+PUT _ingest/pipeline/add-routing
+{
+  "processors" : [
+    {
+      "script" : {
+        "lang" : "painless",
+        "source": "ctx._routing = 'C0'"
+      }
+    }  
+  ]
+}
+
+POST /hamlet_3/_update_by_query?pipeline=add-routing
+{
+  "script" : {
+    "id" : "init_lines",
+    "params" : {
+      "characterId" : "C0"
+    }
+  },
+  "query" : {
+    "term" : {
+      "speaker.keyword" : "HAMLET"
+    }
+  }
+}
+
+```
+
+ps: 为什么不能直接通过script修改_routing元信息
+
+script是routing到指定节点后对文档进行更新，此时无法修改；
+pipline通过ingest node 取出数据后可重新routing，因此它可以修改。
+
+
+#### 自定义分词器 （analyzer)
+
+1 自定义分词器
+2 测试分词器
+3 mapping中对指定字段设置分词器
+4 搜索，测试
+
+```
+#分词器
+#1 Hamlet词项转换为[CENSORED] 2 按空格分词 3 丢弃长短 < 5 的token
+PUT hamlet_2
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "shy_hamlet_analyzer" : {
+          "type" : "custom",
+          "char_filter" : ["replace-hamlet"],
+          "tokenizer" : "whitespace",
+          "filter" : ["length-filter"]
+        }
+      },
+      "char_filter" : {
+          "replace-hamlet" : {
+            "type" : "mapping",
+            "mappings" : [
+              "Hamlet  => [CENSORED]"
+            ]
+          }
+        },
+      "filter" : {
+        "length-filter" : {
+           "type" : "length",
+           "min" : 5
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "text_entry" : {
+        "type": "text",
+        "analyzer": "shy_hamlet_analyzer"
+      }
+    }
+  }
+}
+
+#测试
+POST /hamlet_2/_analyze
+{
+  "analyzer" : "shy_hamlet_analyzer",
+  "text" : "Though yet of Hamlet our dear brothers death" 
+}
+
+#reindex，对文档特定字段按新的分词器进行分词
+POST _reindex
+{
+  "source": {
+    "index": "hamlet_1"
+  },
+  "dest": {
+    "index": "hamlet_2"
+  }
+}
+
+
+#搜索
+GET hamlet_2/_search
+{
+  "query": {
+    "match": {
+      "text_entry": "[CENSORED]"
+    }
+  }
+}
+
+```
+
+#### 搜索 (_search)
+
+1 match 全文搜索
+
+```
+#分页，注意默认的standard分词器会将token转换成小写建立倒排索引
+GET kibana_sample_data_logs/_search
+{
+  "from": 50, 
+  "size": 50, 
+  "query": {
+    "match": {
+      "message": "Firefox"
+    }
+  }
+}
+
+#单字段逻辑“或”匹配，用minumum_should_match保证至少有k个词项匹配
+GET kibana_sample_data_logs/_search 
+{
+  "query": {
+    "match": {
+      "message": {
+        "query": "Firefox Kibana 159.64.35.129",
+        "operator": "or",
+        "minimum_should_match": 2
+      }
+    }
+  },
+  "profile": "true"
+}
+
+#也可以使用复合查询
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "match": {
+            "message": "Firefox"
+          }
+        },
+        {
+          "match": {
+            "message": "Kibana"
+          }
+        }
+      ]
+    }
+  }
+}
+
+#单字段逻辑与匹配
+GET kibana_sample_data_logs/_search 
+{
+  "profile": "true", 
+  "query": {
+    "match": {
+      "message": {
+        "query": "Firefox Kibana 159.64.35.129",
+        "operator": "and"
+      }
+    }
+  }
+}
+
+#高亮，并自定义高亮修饰符
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "match": {
+      "message": {
+        "query": "Firefox Kibana",
+        "operator": "or"
+      }
+    }
+  },
+  "highlight": {
+    "pre_tags": [
+      "{{"
+    ],
+    "post_tags": [
+      "}}"
+    ],
+    "fields": {
+      "message": {}
+    }
+  }
+}
+
+```
+
+2 match_pharse 短语搜索
+
+短语要求完全匹配，包括词项的相对位置
+
+```
+
+#
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "match_phrase": {
+      "message": "HTTP/1.1 200 51"
+    }
+  },
+  "sort": [
+    {
+      "machine.os.keyword": {
+        "order": "desc"
+      }
+    },
+    {
+      "timestamp": {
+        "order": "asc"
+      }
+    }
+  ]
+}
+``` 
+
+ps: 排序字段不能为text 
