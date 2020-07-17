@@ -1053,16 +1053,75 @@ GET kibana_sample_data_logs/_search
     }
   },
   "highlight": {
-    "pre_tags": [
-      "{{"
-    ],
-    "post_tags": [
-      "}}"
-    ],
     "fields": {
-      "message": {}
+      "message": {
+        "pre_tags": [
+          "{{"
+        ],
+        "post_tags": [
+          "}}"
+        ]
+      }
     }
   }
+}
+
+#使用search_after进行分页查询
+# 1 根据时间和id排序，先查询10条；2 下一页从当前最后一条文档的时间和id往后查询
+GET kibana_sample_data_logs/_search
+{
+  "size": 10,
+  "query": {
+    "match": {
+      "message": {
+        "query": "Firefox Kibana",
+        "operator": "or"
+      }
+    }
+  },
+  "sort": [
+    {
+      "utc_time": {
+        "order": "asc"
+      }
+    },
+    {
+      "_id": {
+        "order": "asc"
+      }
+    }
+  ]
+}
+
+#最后一条：
+"sort" : [
+          1593929408359,
+          "sfeaW3MBJrOrL1jRF7q1"
+        ]
+
+#查询下一页
+GET kibana_sample_data_logs/_search
+{
+  "size" : 10,
+  "query": {
+    "match": {
+      "message": {
+        "query": "Firefox Kibana",
+        "operator": "or"
+      }
+    }
+  },
+  "sort": [
+    {
+      "utc_time": {
+        "order": "asc"
+      },
+      "_id" : {
+        "order": "asc"
+      }
+    }
+  ],
+  "search_after" : [1593922692345,"1593922692345"]
 }
 
 ```
