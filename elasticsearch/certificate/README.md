@@ -1121,7 +1121,7 @@ GET kibana_sample_data_logs/_search
       }
     }
   ],
-  "search_after" : [1593922692345,"1593922692345"]
+  "search_after" : [1593922692345,"sfeaW3MBJrOrL1jRF7q1"]
 }
 
 ```
@@ -1156,3 +1156,221 @@ GET kibana_sample_data_logs/_search
 ``` 
 
 ps: 排序字段不能为text 
+
+#### 结构化查询 （term)
+
+结构化查询针对非文本(text)类型的字段，例如number, date, ip address, keyword等
+
+1 使用过滤器 (bool + filter)
+
+过滤器不影响得分，而且可以缓存，优先推荐该方式进行结构化查询
+
+```
+#range/term查询
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "filter": [
+        {
+          "range" : {
+            "response" :{"gte" : 400, "lt" : 500}
+          }
+        },
+        {
+          "term" : {
+            "referer" : "http://twitter.com/success/guion-bluford"
+          }
+        }
+      ]
+    }
+  }
+}
+
+#prefix查询
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "filter": [
+        {
+          "prefix" : {
+            "referer" : "http://twitter.com/success"
+          }
+        },
+         {
+          "prefix" : {
+            "request.keyword" : "/people"
+          }
+        }
+      ]
+    }
+  }
+}
+
+#空与非空查询（exists)
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "filter": [
+        {
+          "exists" : {
+            "field" : "memory"
+          }
+        }
+      ]
+    }
+  }
+}
+
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "must_not": [
+        {
+          "exists": {
+            "field": "memory"
+          }
+        }
+      ]
+    }
+  }
+}
+
+
+#时间范围过滤
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "filter": [
+        {
+          "range" : {
+            "timestamp" : {
+              "gte" : "now-7d/d",
+              "lte" : "now/d"
+            }
+          }
+        }  
+      ]
+    }
+  }
+}
+
+```
+
+2 符合查询（must + must_not + filter + should)
+
+```
+
+#与操作+过滤
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match": {
+            "agent": "Windows"
+          }
+        },
+        {
+          "match_phrase": {
+            "url": "name:john"
+          }
+        }
+      ],
+      "filter": [
+        {
+          "exists" : {
+            "field" : "phpmemory"
+          }
+        }  
+      ]
+    }
+  }
+}
+
+#或操作
+#GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "range": {
+            "response.keyword": {
+              "gte": 400
+            }
+          }
+        },
+        {
+          "term": {
+            "tags.keyword": "error"
+          }
+        }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}
+
+#非操作
+GET kibana_sample_data_logs/_search
+{
+  "query": {
+    "bool": {
+      "must_not": [
+        {
+          "terms": {
+            "tags.keyword": [
+              "warning",
+              "error",
+              "info"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+3 模糊查询
+
+```
+
+#fuziness=2指定最大编辑距离为2，因此仅有2个字符不同的文档可以被查询出来
+GET kibana_sample_data_flights/_search
+{
+  "from": 40,
+  "size": 10, 
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "fuzzy": {
+            "OriginCityName": {
+              "value": "Sidnei",
+              "fuzziness" : 2
+            }
+          }
+        },
+        {
+          "fuzzy": {
+            "DestCityName": {
+              "value": "Sidnei",
+              "fuzziness" : 2
+            }
+          }
+        }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}
+
+
+```
