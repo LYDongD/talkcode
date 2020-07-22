@@ -1261,7 +1261,7 @@ GET kibana_sample_data_logs/_search
 
 ```
 
-2 符合查询（must + must_not + filter + should)
+2 复合查询（must + must_not + filter + should)
 
 ```
 
@@ -1374,3 +1374,16 @@ GET kibana_sample_data_flights/_search
 
 
 ```
+
+* fuzziness 指定最大编辑距离，可指定为0，1，2 或auto
+    * auto, 默认为auto:3,6，根据查询文本长度动态调整最大编辑距离
+        * 长度为<3 -> 最大编辑距离0
+        * 长度3-5 -> 最大编辑距离1
+        * 长度 >5 -> 最大编辑距离2
+        * 例如sidnei, 长度为6，则最大编辑距离为2，相当于fuziness=2
+* expansion
+    * 指定分片匹配的最大文档数量，多分片时返回结果不准确
+
+
+
+

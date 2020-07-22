@@ -1,0 +1,2 @@
+for n in {1..20000} ; do curl  -v -s -w  '\nhttp:%{http_code}\tdns:%{time_namelookup}\tconnect:%{time_connect}\tstart:%{time_starttransfer}\ttotal:%{time_total}\n'  'http://api.map.baidu.com/geocoding/v3/?address=%E6%88%90%E9%83%BD%E5%B8%82%E9%87%91%E7%89%9B%E5%8C%BA%E4%BA%8C%E7%8E%AF%E8%B7%AF%E8%A5%BF%E4%B8%89%E6%AE%B52%E5%8F%B7&output=json&ak=u90sqfnYc9eSTnIOu9Ypx9rVZrtD6IeO\
+    ;  done  &>http.test.txt

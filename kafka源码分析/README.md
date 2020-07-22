@@ -34,3 +34,11 @@
 
 这里面core是核心模块，其他模块要么依赖于core，要么需要已core进行交互
 
+#### scala 语法热身
+
+| 语言 | 变量 | 集合类型 | 条件 | 循环 | 函数 | 类与对象 | 
+| :--: | :--: | :--: | :--: | :--: | :--: | :--: |
+| scala | val/var a = 1 | List/Map/Set/Turple/Option/Iterator  | if (a > 7) println("big") else println("small") | var i = 0 for (i <- 1 to 10) { print(i)} | def main(args : Array[String]): Unit = {} | class/trait/object/case-match |
+| shell | a = 1；$a | 字典：declare -A dic; dic=([k1]="v1" [k2]="v2"); echo ${dic["k1"]} ${dic["k2"]} 数组：b=(1,2,"sd"); echo ${b[0]} |  if [ $1 == 'node1' ]; then xxxxx fi | while true; do xxxx  done  | function a() {echo get parameter $1}; a "hello"| 不能定义对象
+| go | a := 1 | a := []int{}, b:=make(map[int]int) | if a == 3 {} else {} | for i := 1; i < 10; i++ {} ; for i, ele := range list {} | func socre(a string) (int, string)  | type struct CustomObject{} |
+
