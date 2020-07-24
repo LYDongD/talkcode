@@ -1124,6 +1124,21 @@ GET kibana_sample_data_logs/_search
   "search_after" : [1593922692345,"sfeaW3MBJrOrL1jRF7q1"]
 }
 
+
+# 使用scroll api进行查询
+# 查询第一页，并获取scroll_id; 需要指定快照留存时间
+GET kibana_sample_data_logs/_search?scroll=2m
+{
+  "size": 100
+}
+
+# 查询下一页
+POST /_search/scroll
+{
+  "scroll" : "2m",
+  "scroll_id" : "DXF1ZXJ5QW5kRmV0Y2gBAAAAAAADz7MWeklIdUN6aExTNmFjUWZBS2RXX1BTUQ"
+}
+
 ```
 
 2 match_pharse 短语搜索
@@ -1385,5 +1400,96 @@ GET kibana_sample_data_flights/_search
     * 指定分片匹配的最大文档数量，多分片时返回结果不准确
 
 
+#### 查询模板 search template
+
+1 构建查询模板并使用模板查询
+
+1.1 使用_sripts api构建
+
+1.2 使用mastache脚本语言
+
+1.3 调试时使用_render api
+
+```
+POST _scripts/with_response_and_tag
+{
+  "script": {
+    "lang": "mustache",
+    "source": {
+      "query": {
+        "bool": {
+          "filter": [
+            {
+              "range": {
+                "response": {
+                  "gte": "{{with_min_response}}",
+                  "lte": "{{with_max_response}}"
+                }
+              }
+            },
+            {
+              "match": {
+                "tags": "{{with_tag}}"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+
+#查看template在指定参数后的查询语句
+GET /_render/template
+{
+  "id" : "with_response_and_tag",
+  "params": {
+    "with_min_response" : 400,
+    "with_max_response" : 500,
+    "with_tag" : "security"
+  }
+}
+
+#执行查询
+GET /kibana_sample_data_logs/_search/template
+{
+  "id": "with_response_and_tag",
+  "params": {
+    "with_min_response": 400
+    "with_max_response": 500,
+    "with_tag": "security"
+  }
+}
+
+```
+
+2 构建可选参数的search template
+
+2.1 通过mastache可选标签设置对应参数及标点符号
+
+2.2 search template 脚本中source的值调整为json字符串（非json body)
+
+```
+
+#设置with_max_response 和 with_tag 为可选参数
+POST _scripts/with_response_and_tag
+{
+  "script": {
+    "lang": "mustache",
+    "source": "{\"query\": {\"bool\": {\"filter\": [{\"range\": {\"response\": {\"gte\": \"{{with_min_response}}\"{{#with_max_response}},{{/with_max_response}}{{#with_max_response}} \"lte\": \"{{with_max_response}}\"{{/with_max_response}} }}}{{#with_tag}},{{/with_tag}}{{#with_tag}}{ \"match\": {  \"tags\": \"{{with_tag}}\"}{{/with_tag}}}] }}}"
+  }
+}
+
+#测试可选参数为空时对应的查询条件
+GET /_render/template
+{
+  "id" : "with_response_and_tag",
+  "params": {
+    "with_min_response" : 400,
+    "with_max_response" : 500
+  }
+}
+
+```
 
 
