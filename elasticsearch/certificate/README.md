@@ -1492,4 +1492,86 @@ GET /_render/template
 
 ```
 
+#### 管道聚合（pipline aggregation)
 
+1. 管道分为父子管道和兄弟管道，用于对当前分桶指标进行二次聚合
+	* 指定二次聚合类型，例如选择最大桶：max_bucket
+	*  指定二次聚合选择的桶路径：buckets_path, 例如：destinations_by_day>_count
+
+
+```
+
+#按日分组 -> 按目的地分组 -> 选择doc_count最大桶（每日内选择最流行的目的地）
+GET kibana_sample_data_flights/_search?size=0
+{
+  "aggs": {
+    "flights_by_day": {
+      "date_histogram": {
+        "field" : "timestamp",
+        "fixed_interval" : "1d"
+      },
+      "aggs" : {
+        "destinations_by_day" : {
+          "terms" : {
+            "field" : "DestCityName"
+          }
+        },
+        "most_popular_destination_of_the_day" : {
+          "max_bucket" : {
+            "buckets_path" : "destinations_by_day>_count"
+          }
+        }
+      }
+    }
+  }
+}
+
+#按日分组 -> 选择doc_count最大桶（综合日分组选择航班数最多的日）
+GET kibana_sample_data_flights/_search?size=0
+{
+  "aggs": {
+    "flights_by_day": {
+      "date_histogram": {
+        "field" : "timestamp",
+        "fixed_interval" : "1d"
+      }
+    },
+    "day_with_most_flights" : {
+      "max_bucket" : {
+        "buckets_path" : "flights_by_day>_count"
+      }
+    }
+  }
+}
+
+#按日分组-> 按目的地分组 -> 每日内选出最流行目的地 -> 综合日分组选择包含最流行目的地的日 
+GET kibana_sample_data_flights/_search?size=0
+{
+  "aggs": {
+    "flights_by_day": {
+      "date_histogram": {
+        "field" : "timestamp",
+        "fixed_interval" : "1d"
+      },
+      "aggs" : {
+        "destinations_by_day" : {
+          "terms" : {
+            "field" : "DestCityName"
+          }
+        },
+        "most_popular_destination_of_the_day" : {
+          "max_bucket" : {
+            "buckets_path" : "destinations_by_day>_count"
+          }
+        }
+      }
+    },
+    "day_with_the_most_popular_destination_over_all_days" : {
+      "max_bucket" : {
+        "buckets_path" : "flights_by_day>most_popular_destination_of_the_day"
+      }
+    }
+  }
+}
+
+```
