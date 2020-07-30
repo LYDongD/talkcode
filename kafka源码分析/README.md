@@ -114,3 +114,33 @@
 当follower来拉取（fetch)消息时，leader根据其提交的位移(offset)计算出新的高水位并进行更新。
 另外，该方法加锁，保证线程互斥。
 
+#### 日志索引
+
+> 如何重设位移？
+
+重设位移 = 7 + 2 , 即7种策略和2个方法。7种策略可以分为时间维度和位移维度的重设，时间策略包括恢复到指定时间和一段时间之前；位移策略包括恢复到起始，最新，当前，指定位移和相对当前指定偏移的位置。我们可以通过kafka工具脚本或api完成位移重设。
+
+以java api为例，例如我们想补偿消费过去18h的消息，在不影响现有消费的情况下，可以启动一个新的消费组，重设该消费组的位移后进行消费补偿：
+
+
+duration -> offsetsForTimes -> seek -> poll -> filter -> process
+
+核心api:
+
+Map<TopicPartition, OffsetAndTimestamp> Consumer#offsetsForTimes(Map<TopicPartition, Long>) -> 根据时间拉取对应的位移
+
+Map<TopicPartition, OffsetAndTimestamp> Consumers#seek(topicPartition, offset) -> 重设指定分区的位移
+
+拉取消息并处理
+
+```
+while(true) {
+    ConsumerRecords<String, byte[]> records = consumer.poll(1000);
+    filter(records);
+    process(records);
+    consumer.commitAsync()
+}
+
+```
+
+
