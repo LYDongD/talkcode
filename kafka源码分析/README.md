@@ -143,4 +143,39 @@ while(true) {
 
 ```
 
+#### 关于日志和索引的总结
+
+* 日志和索引文件的读写方式有什么区别？
+    * 日志文件 -> FileChannel
+        * FileRecords = FileChannle + Iterator(batch) -> 迭代的读取消息
+    * 索引文件 -> MappedByteBuffer -> 文件内存映射机制(pageCache)
+        * ByteBuffer 
+            * AbstractIndex -> mmap -> | key | value | key | value | ... | key | value|
+                * OffsetIndex -> <relativeOffset, physicalPosition> -> 4 + 4 = 8 
+                * TimeIndex -> <timestamp, relativeOffset> -> 8 + 4 = 12
+
+* 日志恢复时，需要截断无效字节，那么如何确认有效的字节数呢？
+
+读消息文件时，解析的顺序是：
+
+1 解析消息头，确认消息体的长度size
+2 基于size，解析消息体
+
+完整的若干消息头和消息体构成了一个batch，消息文件由若干的batch消息构成，batchs以外的消息未无效消息
+
+因此，读取有效字节数时是按batch迭代的读取，最后用size - validSize 计算出无效的字节数并进行截断
+
+* 如何保证leader和follower因为宕机发生角色互换时，数据不一致问题？
+
+例如，leader.LEO > follower.LEO, 角色互换后，新leader不会从新follower同步消息，此时follower.LEO > leader.LEO
+
+对于新follower，需要截断不一致的消息，截断的依据是leader epoch cache。epoch cache 保存了leader版本号和该版本之上的offset, 即<epoch, offset>。当新leader写入新消息后，cache更新为<epoch+1, newOffset>, 此时新follwer拉取leader消息后，发现epoch不一致，会采用newOffset截断自己，保证数据一致。 
+        
+* 如何提高位移查找的效率？
+
+由于位移索引是有序数组(byteBuffer)，因此可以采用二分法查找; 为了使每次查找都能有效利用pageCache，避免缺页中断引发的io操作，对索引进行了冷热分区，在分区内进行二分查找。
+
+位移查找本质上是查找 <= 目标位移的的最大槽，并获取物理位移，在日志文件中获取消息。
+
+
 
