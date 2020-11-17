@@ -33,7 +33,11 @@ JedisCluster ->> node3: connect(auth)
 node3 -->> JedisCluster: 
 ```
 
-### 2 有限轮询
+### 2 类关系
+
+![jedis cluster](/Users/lee/Desktop/个人文档/中间件/img/jedis cluster.png)
+
+### 3 有限轮询
 
 轮询所有节点，从第一个开始尝试连接并执行cluster slots获取集群槽信息，获取成功则停止轮询；否则尝试下一个节点：
 
@@ -62,7 +66,7 @@ private void initializeSlotsCache(Set<HostAndPort> startNodes, GenericObjectPool
   }
 ```
 
-### 3 分配缓存
+### 4 分配缓存
 
 Jedis在集群模式下，会为每个节点关联建立一个连接池并缓存：
 
@@ -158,7 +162,7 @@ public void discoverClusterNodesAndSlots(Jedis jedis) {
 
 
 
-### 4 创建连接池
+### 5 创建连接池
 
 JedisPool持有一个internalPool，它是一个commons-pool2的GenericObjectPool，说明jedis连接池依赖第三方工具commons-pool实现连接池管理
 
@@ -177,7 +181,7 @@ public void initPool(final GenericObjectPoolConfig poolConfig, PooledObjectFacto
 }
 ```
 
-### 5 空闲检测
+### 6 空闲检测
 
 连接池初始化完毕后启动**空闲连接检测**任务，该任务检测到PoolConfig包含minIdle时，将创建保底数量的连接。
 
