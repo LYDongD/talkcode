@@ -35,7 +35,7 @@ node3 -->> JedisCluster:
 
 ### 2 类关系
 
-![jedis cluster](/Users/lee/Desktop/个人文档/中间件/img/jedis cluster.png)
+![jedis cluster](https://raw.githubusercontent.com/LYDongD/talkcode/master/redis/img/jedis%20cluster.png)
 
 ### 3 有限轮询
 
